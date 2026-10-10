@@ -66,7 +66,7 @@ static class VaultApp
         void Unlocked()
         {
             var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 44, BackColor = Color.FromArgb(240, 240, 245), Padding = new Padding(6) };
-            var lv = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = true, Font = new Font("Segoe UI", 10) };
+            var lv = new ListView { Dock = DockStyle.Fill, View = System.Windows.Forms.View.Details, FullRowSelect = true, MultiSelect = true, Font = new Font("Segoe UI", 10) };
             lv.Columns.Add("Name", 380); lv.Columns.Add("Size", 120);
             void Fill()
             {
