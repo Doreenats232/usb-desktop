@@ -132,6 +132,19 @@ static class U
         using var im = Image.FromFile(src); im.Save(dest, ImageFormat.Png); return dest;
     }
     public static string Hash(string s) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("usbdesk" + s)));
+    public static string MakeHash(string s)
+    {
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var h = Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(s), salt, 200000, HashAlgorithmName.SHA256, 32);
+        return "v2:" + Convert.ToBase64String(salt) + ":" + Convert.ToBase64String(h);
+    }
+    public static bool Check(string s, string stored)
+    {
+        if (!stored.StartsWith("v2:")) return stored == Hash(s);
+        var p = stored.Split(':'); if (p.Length != 3) return false;
+        var h = Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(s), Convert.FromBase64String(p[1]), 200000, HashAlgorithmName.SHA256, 32);
+        return CryptographicOperations.FixedTimeEquals(h, Convert.FromBase64String(p[2]));
+    }
     public static string Unique(string dir, string name)
     {
         var n = name; int i = 2;
@@ -197,7 +210,7 @@ class LoginForm : Form
     readonly TextBox pass = new();
     readonly PictureBox av = new();
     readonly Panel col = new();
-    Bitmap? bg;
+    Bitmap? bg; int fails;
 
     static Label Lb(Color c, float sz, string fam = "Segoe UI") => new() { ForeColor = c, Font = new Font(fam, sz), BackColor = Color.Transparent, AutoSize = false, TextAlign = ContentAlignment.MiddleCenter };
 
@@ -242,9 +255,14 @@ class LoginForm : Form
     void Submit()
     {
         if (pass.Text.Length < 1) { err.Text = "Type a password"; return; }
-        if (first) { File.WriteAllText(uf, U.Hash(pass.Text)); DialogResult = DialogResult.OK; return; }
-        if (File.ReadAllText(uf).Trim() == U.Hash(pass.Text)) DialogResult = DialogResult.OK;
-        else { err.Text = "Wrong password, try again"; pass.SelectAll(); }
+        if (first) { File.WriteAllText(uf, U.MakeHash(pass.Text)); DialogResult = DialogResult.OK; return; }
+        var st = File.ReadAllText(uf).Trim();
+        if (U.Check(pass.Text, st)) { if (!st.StartsWith("v2:")) File.WriteAllText(uf, U.MakeHash(pass.Text)); DialogResult = DialogResult.OK; }
+        else
+        {
+            fails++; err.Text = fails >= 3 ? "Too many tries. Wait a few seconds..." : "Wrong password, try again"; pass.SelectAll();
+            if (fails >= 3) { fails = 0; pass.Enabled = false; Task.Delay(4000).ContinueWith(_ => { if (!IsDisposed) BeginInvoke(new Action(() => { pass.Enabled = true; pass.Focus(); err.Text = ""; })); }); }
+        }
     }
     protected override void OnPaintBackground(PaintEventArgs e)
     {

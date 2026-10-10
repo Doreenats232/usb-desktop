@@ -47,7 +47,7 @@ class Win : Panel
     readonly Panel bar = new(), grip = new();
     readonly Label tl = new();
     readonly Button cl, mx, mn;
-    bool max, drag, rs; Point dn, st, rdn; Size rsz; Rectangle rest;
+    bool max, drag, rs, snapped; Point dn, st, rdn; Size rsz; Rectangle rest;
 
     Button Tb(string t, Color hover)
     {
@@ -68,9 +68,9 @@ class Win : Panel
         cl.Click += (_, _) => Closed?.Invoke(this); mn.Click += (_, _) => Minned?.Invoke(this); mx.Click += (_, _) => Toggle();
         foreach (Control c in new Control[] { bar, tl })
         {
-            c.MouseDown += (_, e) => { Raise(); if (max || e.Button != MouseButtons.Left) return; drag = true; dn = Cursor.Position; st = Location; };
+            c.MouseDown += (_, e) => { Raise(); if (max || e.Button != MouseButtons.Left) return; if (snapped) { Size = rest.Size; snapped = false; } drag = true; dn = Cursor.Position; st = Location; };
             c.MouseMove += (_, _) => { if (drag) { var d = Cursor.Position; Location = new Point(st.X + d.X - dn.X, Math.Max(0, st.Y + d.Y - dn.Y)); } };
-            c.MouseUp += (_, _) => drag = false; c.DoubleClick += (_, _) => Toggle();
+            c.MouseUp += (_, _) => { if (!drag) return; drag = false; if (Parent == null) return; var pt = Parent.PointToClient(Cursor.Position); if (pt.Y <= 4) Toggle(); else if (pt.X <= 4) SnapTo(0); else if (pt.X >= Parent.Width - 5) SnapTo(1); }; c.DoubleClick += (_, _) => Toggle();
         }
         grip.MouseDown += (_, _) => { rs = true; rdn = Cursor.Position; rsz = Size; };
         grip.MouseMove += (_, _) => { if (rs) { var d = Cursor.Position; Size = new Size(Math.Max(320, rsz.Width + d.X - rdn.X), Math.Max(220, rsz.Height + d.Y - rdn.Y)); } };
@@ -79,10 +79,11 @@ class Win : Panel
     }
     void Hook(Control c) { c.MouseDown += (_, _) => Raise(); foreach (Control k in c.Controls) Hook(k); }
     public void Raise() { BringToFront(); Raised?.Invoke(this); }
+    void SnapTo(int side) { if (!snapped && !max) rest = Bounds; snapped = true; max = false; Bounds = new Rectangle(side == 0 ? 0 : Parent!.Width / 2, 0, Parent!.Width / 2, Parent.Height); grip.BringToFront(); }
     public void Toggle()
     {
         if (Parent == null) return;
-        if (!max) { rest = Bounds; Bounds = new Rectangle(0, 0, Parent.Width, Parent.Height); max = true; } else { Bounds = rest; max = false; }
+        if (!max) { if (!snapped) rest = Bounds; snapped = false; Bounds = new Rectangle(0, 0, Parent.Width, Parent.Height); max = true; } else { Bounds = rest; max = false; }
         grip.BringToFront();
     }
 }
@@ -97,6 +98,8 @@ class DesktopForm : Form
     readonly FlowLayoutPanel grid = new();
     readonly PictureBox mAv = new();
     readonly System.Windows.Forms.Timer tm = new() { Interval = 1000 }, tt = new() { Interval = 3200 };
+    public readonly List<string> Notes = new();
+    QuickPanel quick = null!; ClockWidget? wclock; Panel? wnote; DateTime lastInput = DateTime.Now; bool locking;
 
     static readonly (string N, string G, Color C, string K)[] Catalog =
     {
@@ -104,9 +107,9 @@ class DesktopForm : Form
         ("Calculator", "🧮", Color.FromArgb(29,158,117), "calc"), ("Paint", "🎨", Color.FromArgb(212,83,126), "paint"),
         ("Terminal", "⌨", Color.FromArgb(68,68,80), "term"), ("Settings", "⚙", Color.FromArgb(95,94,110), "settings"),
         ("Browser", "🌐", Color.FromArgb(24,95,165), "web"), ("Screenshot", "📷", Color.FromArgb(127,119,221), "shot"),
-        ("Recycle Bin", "🗑", Color.FromArgb(120,125,135), "bin"),
+        ("Recycle Bin", "🗑", Color.FromArgb(120,125,135), "bin"), ("MLD Store", "🛍", Color.FromArgb(212,83,126), "store"), ("Task Manager", "📊", Color.FromArgb(29,158,117), "tm"),
     };
-    static readonly string[] OnDesk = { "files", "vm", "bin", "web", "settings", "notepad", "calc", "paint", "term" };
+    static readonly string[] OnDesk = { "files", "vm", "store", "bin", "web", "settings", "notepad", "calc", "paint", "term" };
 
     public DesktopForm()
     {
@@ -126,18 +129,27 @@ class DesktopForm : Form
         tt.Tick += (_, _) => { tt.Stop(); toast.Visible = false; };
 
         BuildMenu(); BuildDeskMenu();
+        quick = new QuickPanel(this); Controls.Add(quick); tray.Click += (_, _) => ToggleQuick(); clock.Click += (_, _) => ToggleQuick(); tray.Cursor = Cursors.Hand; clock.Cursor = Cursors.Hand;
+        Application.AddMessageFilter(new IdleFilter(() => lastInput = DateTime.Now));
         desk.MouseDown += (_, _) => { HideMenu(); foreach (var i in desk.Controls.OfType<DeskIcon>()) { i.Sel = false; i.Invalidate(); } };
-        desk.SizeChanged += (_, _) => SetWall();
+        desk.SizeChanged += (_, _) => { SetWall(); if (wclock != null) wclock.Left = Math.Max(0, desk.Width - 290); if (wnote != null) wnote.Left = Math.Max(0, desk.Width - 250); };
         KeyUp += (_, e) => { if (e.KeyCode == Keys.PrintScreen) Shot(); };
         KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) HideMenu(); };
         tm.Tick += (_, _) => Tick(); tm.Start();
-        Load += (_, _) => { ApplyLook(); LayoutBar(); Tick(); };
-        Shown += (_, _) => Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " 👋");
+        Load += (_, _) => { ApplyLook(); ApplyWidgets(); LayoutBar(); Tick(); };
+        Shown += async (_, _) =>
+        {
+            var sp = new Splash(ClientSize); Controls.Add(sp); sp.BringToFront(); Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " 👋");
+            try { var u = await Updater.Check(); if (u.latest > Updater.Cur) Toast("⬆ Update " + u.latest + " is available. Open Settings > About."); } catch { }
+        };
     }
 
     void Tick()
     {
         bool h24 = Cfg.Get("h24", "1") == "1";
+        wclock?.Invalidate(); var im = Cfg.Int("idle", 10);
+        if (im > 0 && !locking && DateTime.Now - lastInput > TimeSpan.FromMinutes(im)) Lock();
+        if (Cfg.Get("usbwatch", "1") == "1" && !Directory.Exists(Paths.Root)) Application.Exit();
         clock.Text = DateTime.Now.ToString(h24 ? "HH:mm" : "h:mm tt") + "\n" + DateTime.Now.ToString("dd/MM/yyyy");
         var ps = SystemInformation.PowerStatus;
         tray.Text = "📶  🔊" + (ps.BatteryChargeStatus != BatteryChargeStatus.NoSystemBattery && ps.BatteryLifePercent <= 1 ? "  🔋" + (int)(ps.BatteryLifePercent * 100) + "%" : "");
@@ -159,7 +171,7 @@ class DesktopForm : Form
 
     public void Toast(string m)
     {
-        toastLb.Text = m; toast.Location = new Point(Width - 340, 16); toast.Visible = true; toast.BringToFront(); tt.Stop(); tt.Start();
+        toastLb.Text = m; Notes.Add(DateTime.Now.ToString("HH:mm") + "  " + m); if (Notes.Count > 30) Notes.RemoveAt(0); toast.Location = new Point(Width - 340, 16); toast.Visible = true; toast.BringToFront(); tt.Stop(); tt.Start();
     }
 
     public void Shot()
@@ -261,6 +273,7 @@ class DesktopForm : Form
     {
         if (Directory.Exists(p)) { Launch("files", p); return; }
         var ext = Path.GetExtension(p).ToLower();
+        if (new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif" }.Contains(ext)) { Launch("photo", p); return; }
         if (new[] { ".txt", ".md", ".json", ".js", ".cs", ".log", ".ini", ".html", ".css", ".py", ".bat" }.Contains(ext)) Launch("notepad", p); else U.Open(p);
     }
 
@@ -274,7 +287,10 @@ class DesktopForm : Form
             case "calc": AddWin("Calculator", "🧮", Views.Calc(), new Size(320, 470)); break;
             case "paint": AddWin("Paint", "🎨", Views.PaintApp(this), new Size(840, 560)); break;
             case "term": AddWin("Terminal", "⌨", Views.Term(), new Size(700, 420)); break;
-            case "web": U.Open("https://www.google.com"); break;
+            case "web": AddWin("Browser", "🌐", Web.Browser(this, arg), new Size(960, 620)); break;
+            case "store": AddWin("MLD Store", "🛍", Web.Store(this), new Size(980, 640)); break;
+            case "tm": AddWin("Task Manager", "📊", Tools.TaskMgr(this), new Size(620, 460)); break;
+            case "photo": if (arg != null) AddWin(Path.GetFileName(arg), "🖼", Tools.Photo(arg), new Size(760, 540)); break;
             case "shot": Shot(); break;
             case "bin":
             case "vm":
@@ -301,18 +317,46 @@ class DesktopForm : Form
         var pl = new Label { Text = "Pinned", ForeColor = Color.FromArgb(200, 200, 220), Font = new Font("Segoe UI", 10, FontStyle.Bold), Location = new Point(18, 60), AutoSize = true };
         grid.Bounds = new Rectangle(14, 88, 376, 366); grid.BackColor = menu.BackColor; grid.AutoScroll = true;
         foreach (var a in Catalog) { var key = a.K; grid.Controls.Add(AppBtn(a.N, U.Tile(a.G, a.C), () => Launch(key))); }
-        try { foreach (var f in Directory.GetFiles(Paths.Apps).Where(x => x.EndsWith(".exe") || x.EndsWith(".lnk") || x.EndsWith(".bat"))) { var p = f; grid.Controls.Add(AppBtn(Path.GetFileNameWithoutExtension(p), U.IconFor(p), () => { HideMenu(); U.Open(p); })); } } catch { }
+        AddUserApps();
         s.TextChanged += (_, _) => { foreach (Button b in grid.Controls) b.Visible = b.Text.Contains(s.Text, StringComparison.OrdinalIgnoreCase); };
         mAv.Bounds = new Rectangle(18, 478, 40, 40); mAv.SizeMode = PictureBoxSizeMode.Zoom;
         mName.Bounds = new Rectangle(66, 478, 220, 40); mName.ForeColor = Color.White; mName.Font = new Font("Segoe UI", 11); mName.TextAlign = ContentAlignment.MiddleLeft;
         var pw = new Button { Text = "⏻", Bounds = new Rectangle(340, 478, 46, 40), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(55, 55, 80), Font = new Font("Segoe UI", 13) };
         pw.FlatAppearance.BorderSize = 0;
         var pm = new ContextMenuStrip();
-        pm.Items.Add("🔒  Lock", null, (_, _) => { HideMenu(); using var l = new LoginForm(); l.ShowDialog(); });
+        pm.Items.Add("🔒  Lock", null, (_, _) => { HideMenu(); Lock(); });
         pm.Items.Add("⏻  Shut down", null, (_, _) => Application.Exit());
         pw.Click += (_, _) => pm.Show(pw, new Point(0, 0), ToolStripDropDownDirection.AboveLeft);
         menu.Controls.AddRange(new Control[] { s, pl, grid, mAv, mName, pw }); Controls.Add(menu);
     }
     void ShowMenu() { menu.Location = new Point(8, Height - bar.Height - menu.Height - 8); mAv.Image = U.Avatar(40); mName.Text = Cfg.Get("name", Environment.UserName); menu.Visible = true; menu.BringToFront(); }
-    void HideMenu() => menu.Visible = false;
+    void HideMenu() { menu.Visible = false; quick.Visible = false; }
+    void ToggleQuick() { if (quick.Visible) { quick.Visible = false; return; } menu.Visible = false; quick.Refresh2(); quick.Location = new Point(Width - quick.Width - 8, Height - bar.Height - quick.Height - 8); quick.Visible = true; quick.BringToFront(); }
+    void Lock() { if (locking) return; locking = true; try { using var l = new LoginForm(); l.ShowDialog(); } finally { locking = false; lastInput = DateTime.Now; } }
+    public void ApplyWidgets()
+    {
+        if (wclock != null) { desk.Controls.Remove(wclock); wclock.Dispose(); wclock = null; }
+        if (wnote != null) { desk.Controls.Remove(wnote); wnote.Dispose(); wnote = null; }
+        if (Cfg.Get("wclock", "1") == "1") { wclock = new ClockWidget { Location = new Point(Math.Max(0, desk.Width - 290), 16) }; desk.Controls.Add(wclock); wclock.SendToBack(); }
+        if (Cfg.Get("wnote", "1") == "1") { wnote = Tools.Sticky(); wnote.Location = new Point(Math.Max(0, desk.Width - 250), 140); desk.Controls.Add(wnote); wnote.SendToBack(); }
+    }
+    void AddUserApps()
+    {
+        try
+        {
+            foreach (var f in Directory.GetFiles(Paths.Apps).Where(x => x.EndsWith(".exe") || x.EndsWith(".lnk") || x.EndsWith(".bat"))) { var p = f; grid.Controls.Add(AppBtn(Path.GetFileNameWithoutExtension(p), U.IconFor(p), () => { HideMenu(); U.Open(p); })); }
+            foreach (var d in Directory.GetDirectories(Paths.Apps)) { var exe = Directory.GetFiles(d, "*.exe").FirstOrDefault(); if (exe != null) { var p = exe; grid.Controls.Add(AppBtn(Path.GetFileName(d), U.IconFor(p), () => { HideMenu(); U.Open(p); })); } }
+        }
+        catch { }
+    }
+    public void ReloadApps() { while (grid.Controls.Count > Catalog.Length) { var c = grid.Controls[grid.Controls.Count - 1]; grid.Controls.Remove(c); c.Dispose(); } AddUserApps(); }
+    public void AfterDownload(string f)
+    {
+        try
+        {
+            if (f.StartsWith(Paths.Apps) && f.EndsWith(".zip")) { System.IO.Compression.ZipFile.ExtractToDirectory(f, U.Unique(Paths.Apps, Path.GetFileNameWithoutExtension(f))); File.Delete(f); }
+            ReloadApps(); Reload(); Toast("✅ Downloaded " + Path.GetFileName(f));
+        }
+        catch (Exception ex) { Toast(ex.Message); }
+    }
 }

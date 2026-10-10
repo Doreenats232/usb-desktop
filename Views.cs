@@ -5,6 +5,14 @@ namespace UsbDesktop;
 
 static class Views
 {
+    static List<string> clip = new(); static bool cutMode;
+    static void CopyDir(string s, string d)
+    {
+        Directory.CreateDirectory(d);
+        foreach (var f in Directory.GetFiles(s)) File.Copy(f, Path.Combine(d, Path.GetFileName(f)));
+        foreach (var x in Directory.GetDirectories(s)) CopyDir(x, Path.Combine(d, Path.GetFileName(x)));
+    }
+
     public static Control Notepad(DesktopForm sh, string? path)
     {
         var p = new Panel();
@@ -124,17 +132,17 @@ static class Views
     {
         var p = new Panel(); var top = new Panel { Dock = DockStyle.Top, Height = 38, BackColor = Color.FromArgb(240, 240, 245) };
         var path = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Font = new Font("Segoe UI", 10) };
-        var up = new Button { Text = "↑", Width = 40, Dock = DockStyle.Left }; var nf = new Button { Text = "＋ Folder", Width = 90, Dock = DockStyle.Right };
-        top.Controls.Add(path); top.Controls.Add(up); top.Controls.Add(nf);
+        var up = new Button { Text = "↑", Width = 40, Dock = DockStyle.Left }; var nf = new Button { Text = "＋ Folder", Width = 90, Dock = DockStyle.Right }; var sb = new TextBox { Dock = DockStyle.Right, Width = 150, Font = new Font("Segoe UI", 10), PlaceholderText = "Search" };
+        top.Controls.Add(path); top.Controls.Add(up); top.Controls.Add(nf); top.Controls.Add(sb);
         var il = new ImageList { ImageSize = new Size(40, 40), ColorDepth = ColorDepth.Depth32Bit };
         var lv = new ListView { Dock = DockStyle.Fill, View = View.LargeIcon, LargeImageList = il, LabelEdit = true, Font = new Font("Segoe UI", 9.5f) };
-        string cur = start;
+        string cur = start, filter = "";
         void Go(string d)
         {
             try
             {
                 var items = Directory.GetFileSystemEntries(d).OrderByDescending(Directory.Exists).ThenBy(x => x).ToList(); cur = d; path.Text = d; lv.Items.Clear();
-                foreach (var e in items)
+                foreach (var e in items.Where(x => filter == "" || Path.GetFileName(x).Contains(filter, StringComparison.OrdinalIgnoreCase)))
                 {
                     var key = Directory.Exists(e) ? "dir" : Path.GetExtension(e).ToLower(); if (!il.Images.ContainsKey(key)) il.Images.Add(key, U.IconFor(e));
                     lv.Items.Add(new ListViewItem(Path.GetFileName(e), key) { Tag = e });
@@ -142,6 +150,7 @@ static class Views
             }
             catch (Exception ex) { sh.Toast(ex.Message); }
         }
+        sb.TextChanged += (_, _) => { filter = sb.Text; Go(cur); };
         up.Click += (_, _) => { var pr = Directory.GetParent(cur); if (pr != null) Go(pr.FullName); };
         nf.Click += (_, _) => { Directory.CreateDirectory(U.Unique(cur, "New folder")); Go(cur); sh.Reload(); };
         lv.ItemActivate += (_, _) => { if (lv.SelectedItems.Count > 0) { var t = (string)lv.SelectedItems[0].Tag!; if (Directory.Exists(t)) Go(t); else sh.OpenFile(t); } };
@@ -154,7 +163,27 @@ static class Views
         m.Items.Add("Open", null, (_, _) => { if (lv.SelectedItems.Count > 0) { var t = (string)lv.SelectedItems[0].Tag!; if (Directory.Exists(t)) Go(t); else sh.OpenFile(t); } });
         m.Items.Add("Rename", null, (_, _) => { if (lv.SelectedItems.Count > 0) lv.SelectedItems[0].BeginEdit(); });
         m.Items.Add("Delete", null, (_, _) => { foreach (ListViewItem it in lv.SelectedItems) try { Bin.Trash((string)it.Tag!); } catch { } Go(cur); sh.Reload(); sh.Toast("Moved to Recycle Bin"); });
+        void Sel(bool c) { clip = lv.SelectedItems.Cast<ListViewItem>().Select(i => (string)i.Tag!).ToList(); cutMode = c; sh.Toast((c ? "✂ Cut " : "📋 Copied ") + clip.Count + " item(s)"); }
+        void Paste()
+        {
+            foreach (var s in clip) { try { var d = U.Unique(cur, Path.GetFileName(s)); if (Directory.Exists(s)) { if (cutMode) Directory.Move(s, d); else CopyDir(s, d); } else if (cutMode) File.Move(s, d); else File.Copy(s, d); } catch (Exception ex) { sh.Toast(ex.Message); } }
+            if (cutMode) clip.Clear(); Go(cur); sh.Reload();
+        }
+        m.Items.Add("Copy", null, (_, _) => Sel(false)); m.Items.Add("Cut", null, (_, _) => Sel(true)); m.Items.Add("Paste", null, (_, _) => Paste());
+        m.Items.Add("🗜  Compress to zip", null, (_, _) =>
+        {
+            foreach (ListViewItem it in lv.SelectedItems)
+                try { var t = (string)it.Tag!; var z = U.Unique(cur, Path.GetFileNameWithoutExtension(t) + ".zip"); if (Directory.Exists(t)) System.IO.Compression.ZipFile.CreateFromDirectory(t, z); else { using var za = System.IO.Compression.ZipFile.Open(z, System.IO.Compression.ZipArchiveMode.Create); za.CreateEntryFromFile(t, Path.GetFileName(t)); } }
+                catch (Exception ex) { sh.Toast(ex.Message); }
+            Go(cur);
+        });
+        m.Items.Add("📦  Extract here", null, (_, _) =>
+        {
+            foreach (ListViewItem it in lv.SelectedItems) { var t = (string)it.Tag!; if (t.EndsWith(".zip")) try { System.IO.Compression.ZipFile.ExtractToDirectory(t, U.Unique(cur, Path.GetFileNameWithoutExtension(t))); } catch (Exception ex) { sh.Toast(ex.Message); } }
+            Go(cur);
+        });
         m.Items.Add("Refresh", null, (_, _) => Go(cur)); lv.ContextMenuStrip = m;
+        lv.KeyDown += (_, e) => { if (e.Control && e.KeyCode == Keys.C) Sel(false); else if (e.Control && e.KeyCode == Keys.X) Sel(true); else if (e.Control && e.KeyCode == Keys.V) Paste(); };
         p.Controls.Add(lv); p.Controls.Add(top); Go(start); return p;
     }
 
@@ -163,7 +192,7 @@ static class Views
         var root = new Panel(); var nav = new Panel { Dock = DockStyle.Left, Width = 200, BackColor = Color.FromArgb(243, 243, 248) };
         var page = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, AutoScroll = true };
         root.Controls.Add(page); root.Controls.Add(nav);
-        string[] names = { "🎨  Personalization", "🖥  Display", "👤  Accounts", "🔒  Lock screen", "ℹ  About" };
+        string[] names = { "🎨  Personalization", "🖥  Display", "👤  Accounts", "🔒  Lock screen", "🛡  Security", "🛍  Store", "ℹ  About & updates" };
         Action<int> show = _ => { };
         for (int i = 0; i < names.Length; i++)
         {
@@ -199,7 +228,11 @@ static class Views
                     c1.CheckedChanged += (_, _) => { Cfg.Set("icons", c1.Checked ? "1" : "0"); sh.Reload(); };
                     var c2 = new CheckBox { Text = "24-hour clock", Checked = Cfg.Get("h24", "1") == "1", Location = new Point(24, 224), AutoSize = true, Font = new Font("Segoe UI", 10.5f) };
                     c2.CheckedChanged += (_, _) => Cfg.Set("h24", c2.Checked ? "1" : "0");
-                    page.Controls.Add(c1); page.Controls.Add(c2); break;
+                    var c3 = new CheckBox { Text = "Show clock widget", Checked = Cfg.Get("wclock", "1") == "1", Location = new Point(24, 258), AutoSize = true, Font = new Font("Segoe UI", 10.5f) };
+                    c3.CheckedChanged += (_, _) => { Cfg.Set("wclock", c3.Checked ? "1" : "0"); sh.ApplyWidgets(); };
+                    var c4 = new CheckBox { Text = "Show sticky note", Checked = Cfg.Get("wnote", "1") == "1", Location = new Point(24, 292), AutoSize = true, Font = new Font("Segoe UI", 10.5f) };
+                    c4.CheckedChanged += (_, _) => { Cfg.Set("wnote", c4.Checked ? "1" : "0"); sh.ApplyWidgets(); };
+                    page.Controls.Add(c1); page.Controls.Add(c2); page.Controls.Add(c3); page.Controls.Add(c4); break;
                 case 2:
                     L("Accounts", 24, 18, 18, true);
                     page.Controls.Add(new PictureBox { Bounds = new Rectangle(24, 62, 120, 120), Image = U.Avatar(120), SizeMode = PictureBoxSizeMode.Zoom });
@@ -210,9 +243,9 @@ static class Views
                     B("Change password", 24, 436, 160, () =>
                     {
                         var uf = Path.Combine(Paths.Data, "user.txt");
-                        if (File.ReadAllText(uf).Trim() != U.Hash(po.Text)) { sh.Toast("Current password is wrong"); return; }
+                        if (!U.Check(po.Text, File.ReadAllText(uf).Trim())) { sh.Toast("Current password is wrong"); return; }
                         if (pn.Text.Length < 1) { sh.Toast("Type a new password"); return; }
-                        File.WriteAllText(uf, U.Hash(pn.Text)); po.Clear(); pn.Clear(); sh.Toast("🔑 Password changed");
+                        File.WriteAllText(uf, U.MakeHash(pn.Text)); po.Clear(); pn.Clear(); sh.Toast("🔑 Password changed");
                     });
                     break;
                 case 3:
@@ -220,13 +253,30 @@ static class Views
                     page.Controls.Add(new PictureBox { Bounds = new Rectangle(24, 96, 360, 200), Image = Theme.Lock(new Size(360, 200)), SizeMode = PictureBoxSizeMode.Zoom, BorderStyle = BorderStyle.FixedSingle });
                     B("🖼  Choose picture…", 24, 312, 180, () => { var f = Pick(); if (f != null) { Cfg.Set("lockimg", U.SaveImg(f, "lock")); show(3); } });
                     B("Use my wallpaper", 214, 312, 170, () => { Cfg.Set("lockimg", ""); show(3); }); break;
+                case 4:
+                    L("Security", 24, 18, 18, true); L("Auto-lock after being idle (minutes, 0 = off)", 24, 66, 11);
+                    var ni = new NumericUpDown { Bounds = new Rectangle(24, 96, 90, 28), Minimum = 0, Maximum = 240, Value = Math.Clamp(Cfg.Int("idle", 10), 0, 240), Font = new Font("Segoe UI", 10.5f) };
+                    ni.ValueChanged += (_, _) => Cfg.Set("idle", ((int)ni.Value).ToString()); page.Controls.Add(ni);
+                    var cu = new CheckBox { Text = "Close the desktop when the USB is removed", Checked = Cfg.Get("usbwatch", "1") == "1", Location = new Point(24, 148), AutoSize = true, Font = new Font("Segoe UI", 10.5f) };
+                    cu.CheckedChanged += (_, _) => Cfg.Set("usbwatch", cu.Checked ? "1" : "0"); page.Controls.Add(cu);
+                    L("Passwords are salted and hashed (PBKDF2). Change yours in Accounts.", 24, 196, 10); break;
+                case 5:
+                    L("MLD Store", 24, 18, 18, true); L("Store website address", 24, 66, 11); var su = T(24, 96, 420); su.Text = Cfg.Get("store_url");
+                    B("Save", 460, 93, 90, () => { Cfg.Set("store_url", su.Text.Trim()); sh.Toast("Store address saved"); });
+                    L("Apps you download in the store go to your apps folder and show in the Start menu.", 24, 140, 10); break;
                 default:
                     L("About", 24, 18, 18, true);
                     var root2 = Path.GetPathRoot(Paths.Root)!; string free = ""; try { var di = new DriveInfo(root2); free = $"{di.AvailableFreeSpace / 1073741824} GB free of {di.TotalSize / 1073741824} GB"; } catch { }
                     L("USB Desktop  v2.0", 24, 66, 12, true); L("Computer: " + Cfg.Get("name", Environment.UserName) + "'s USB PC", 24, 100, 11);
-                    L("Drive: " + root2 + "   " + free, 24, 132, 11); L("Running from: " + Paths.Root, 24, 164, 10); break;
+                    L("Drive: " + root2 + "   " + free, 24, 132, 11); L("Running from: " + Paths.Root, 24, 164, 10); L("Version 1.0." + Updater.Cur, 24, 196, 10); var ul = L("", 24, 276, 10);
+                    B("⬆  Check for updates", 24, 230, 200, async () =>
+                    {
+                        ul.Text = "Checking...";
+                        try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { ul.Text = "Version " + u.latest + " found. Downloading..."; await Updater.Apply(u.url); } else ul.Text = "You're up to date ✅"; }
+                        catch (Exception ex) { ul.Text = "Couldn't check: " + ex.Message; }
+                    }); break;
             }
         };
-        show(Math.Clamp(start, 0, 4)); return root;
+        show(Math.Clamp(start, 0, 6)); return root;
     }
 }
