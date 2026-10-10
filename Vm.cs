@@ -48,6 +48,7 @@ static class VmApp
         L("1  QEMU engine", 24, 76, 10, true); L("2  Linux installer", 24, 136, 10, true); L("3  Virtual disk", 24, 196, 10, true);
         B("Install QEMU", 420, 90, 150, async () =>
         {
+            if (System.Runtime.InteropServices.RuntimeInformation.OSArchitecture != System.Runtime.InteropServices.Architecture.X64) throw new Exception("Full OS needs 64-bit Intel/AMD Windows");
             var url = await Latest("https://qemu.weilnetz.de/w64/", @"qemu-w64-setup-\d+\.exe(?![\w.])"); var inst = Path.Combine(Paths.Vm, "qemu-setup.exe");
             await Download(url, inst, pb, st); st.Text = "Approve the Windows prompt to finish installing…"; Directory.CreateDirectory(QemuDir);
             using var pr = Process.Start(new ProcessStartInfo(inst, "/S /D=" + QemuDir) { UseShellExecute = true, Verb = "runas" })!; await pr.WaitForExitAsync();
