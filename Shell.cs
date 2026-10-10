@@ -43,7 +43,7 @@ class DeskIcon : Control
 class Win : Panel
 {
     public readonly string Title;
-    public Action<Win>? Closed, Minned, Focused;
+    public Action<Win>? Closed, Minned, Raised;
     readonly Panel bar = new(), grip = new();
     readonly Label tl = new();
     readonly Button cl, mx, mn;
@@ -78,7 +78,7 @@ class Win : Panel
         Hook(content); MouseDown += (_, _) => Raise();
     }
     void Hook(Control c) { c.MouseDown += (_, _) => Raise(); foreach (Control k in c.Controls) Hook(k); }
-    public void Raise() { BringToFront(); Focused?.Invoke(this); }
+    public void Raise() { BringToFront(); Raised?.Invoke(this); }
     public void Toggle()
     {
         if (Parent == null) return;
@@ -241,8 +241,8 @@ class DesktopForm : Form
     }
 
     // ---------- windows ----------
-    Win? Top() => desk.Controls.OfType<Win>().FirstOrDefault(x => x.Visible);
-    void Sync() { var t = Top(); foreach (var (w, b) in wins) b.BackColor = w.Visible && w == t ? Theme.Accent : Color.FromArgb(40, 40, 58); }
+    Win? FrontWin() => desk.Controls.OfType<Win>().FirstOrDefault(x => x.Visible);
+    void Sync() { var t = FrontWin(); foreach (var (w, b) in wins) b.BackColor = w.Visible && w == t ? Theme.Accent : Color.FromArgb(40, 40, 58); }
 
     public Win AddWin(string title, string glyph, Control view, Size sz)
     {
@@ -250,10 +250,10 @@ class DesktopForm : Form
         desk.Controls.Add(w); w.BringToFront();
         var b = new Button { Text = glyph + "  " + title, FlatStyle = FlatStyle.Flat, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Emoji", 9.5f) };
         b.FlatAppearance.BorderSize = 0; wins.Add((w, b)); bar.Controls.Add(b);
-        b.Click += (_, _) => { var t = Top(); if (!w.Visible) { w.Visible = true; w.BringToFront(); } else if (t == w) w.Visible = false; else w.BringToFront(); Sync(); };
+        b.Click += (_, _) => { var t = FrontWin(); if (!w.Visible) { w.Visible = true; w.BringToFront(); } else if (t == w) w.Visible = false; else w.BringToFront(); Sync(); };
         w.Closed = _ => BeginInvoke(new Action(() => { bar.Controls.Remove(b); b.Dispose(); wins.RemoveAll(x => x.w == w); desk.Controls.Remove(w); w.Dispose(); LayoutBar(); Sync(); }));
         w.Minned = _ => { w.Visible = false; Sync(); };
-        w.Focused = _ => { HideMenu(); Sync(); };
+        w.Raised = _ => { HideMenu(); Sync(); };
         LayoutBar(); Sync(); return w;
     }
 
