@@ -95,7 +95,7 @@ class DesktopForm : Form
         catch { }
     }
 
-    void Reload()
+    public void Reload()
     {
         int sz = int.TryParse(Cfg.Get("icon", "48"), out var n) ? n : 48;
         icons.ImageSize = new Size(sz, sz); lv.Items.Clear(); icons.Images.Clear();
