@@ -100,13 +100,13 @@ class DesktopForm : Form
 
     static readonly (string N, string G, Color C, string K)[] Catalog =
     {
-        ("Files", "📁", Color.FromArgb(239,159,39), "files"), ("Notepad", "📝", Color.FromArgb(55,138,221), "notepad"),
+        ("Files", "📁", Color.FromArgb(239,159,39), "files"), ("Full OS", "🖥", Color.FromArgb(83,74,183), "vm"), ("Notepad", "📝", Color.FromArgb(55,138,221), "notepad"),
         ("Calculator", "🧮", Color.FromArgb(29,158,117), "calc"), ("Paint", "🎨", Color.FromArgb(212,83,126), "paint"),
         ("Terminal", "⌨", Color.FromArgb(68,68,80), "term"), ("Settings", "⚙", Color.FromArgb(95,94,110), "settings"),
         ("Browser", "🌐", Color.FromArgb(24,95,165), "web"), ("Screenshot", "📷", Color.FromArgb(127,119,221), "shot"),
         ("Recycle Bin", "🗑", Color.FromArgb(120,125,135), "bin"),
     };
-    static readonly string[] OnDesk = { "files", "bin", "web", "settings", "notepad", "calc", "paint", "term" };
+    static readonly string[] OnDesk = { "files", "vm", "bin", "web", "settings", "notepad", "calc", "paint", "term" };
 
     public DesktopForm()
     {
@@ -277,10 +277,12 @@ class DesktopForm : Form
             case "web": U.Open("https://www.google.com"); break;
             case "shot": Shot(); break;
             case "bin":
+            case "vm":
             case "settings":
-                var title = k == "bin" ? "Recycle Bin" : "Settings"; var ex = wins.FirstOrDefault(x => x.w.Title == title).w;
+                var title = k == "bin" ? "Recycle Bin" : k == "vm" ? "Full OS" : "Settings"; var ex = wins.FirstOrDefault(x => x.w.Title == title).w;
                 if (ex != null) { ex.Visible = true; ex.BringToFront(); Sync(); }
                 else if (k == "bin") AddWin(title, "🗑", Views.BinView(this), new Size(620, 420));
+                else if (k == "vm") AddWin(title, "🖥", VmApp.View(this), new Size(720, 540));
                 else AddWin(title, "⚙", Views.Settings(this, int.TryParse(arg, out var pg) ? pg : 0), new Size(900, 600));
                 break;
         }
