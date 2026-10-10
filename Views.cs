@@ -173,7 +173,7 @@ static class Views
         m.Items.Add("🗜  Compress to zip", null, (_, _) =>
         {
             foreach (ListViewItem it in lv.SelectedItems)
-                try { var t = (string)it.Tag!; var z = U.Unique(cur, Path.GetFileNameWithoutExtension(t) + ".zip"); if (Directory.Exists(t)) System.IO.Compression.ZipFile.CreateFromDirectory(t, z); else { using var za = System.IO.Compression.ZipFile.Open(z, System.IO.Compression.ZipArchiveMode.Create); za.CreateEntryFromFile(t, Path.GetFileName(t)); } }
+                try { var t = (string)it.Tag!; var z = U.Unique(cur, Path.GetFileNameWithoutExtension(t) + ".zip"); if (Directory.Exists(t)) System.IO.Compression.ZipFile.CreateFromDirectory(t, z); else { using var za = System.IO.Compression.ZipFile.Open(z, System.IO.Compression.ZipArchiveMode.Create); System.IO.Compression.ZipFileExtensions.CreateEntryFromFile(za, t, Path.GetFileName(t)); } }
                 catch (Exception ex) { sh.Toast(ex.Message); }
             Go(cur);
         });
