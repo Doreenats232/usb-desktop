@@ -35,6 +35,7 @@ static class VmApp
     public static Control View(DesktopForm sh)
     {
         var p = new Panel { BackColor = Color.White, AutoScroll = true };
+        Button start = null!, stop = null!; ComboBox boot = null!;
         Label L(string t, int x, int y, float sz = 10, bool b = false) { var l = new Label { Text = t, Location = new Point(x, y), AutoSize = true, Font = new Font("Segoe UI", sz, b ? FontStyle.Bold : FontStyle.Regular) }; p.Controls.Add(l); return l; }
         Button B(string t, int x, int y, int w, Func<Task> a) { var b = new Button { Text = t, Bounds = new Rectangle(x, y, w, 34), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White, Cursor = Cursors.Hand }; b.FlatAppearance.BorderSize = 0; b.Click += async (_, _) => { try { await a(); } catch (Exception ex) { st.Text = "⚠ " + ex.Message; } Refresh(); }; p.Controls.Add(b); return b; }
         NumericUpDown N(int x, int y, int min, int max, int val, int inc) { var n = new NumericUpDown { Bounds = new Rectangle(x, y, 90, 28), Minimum = min, Maximum = max, Value = Math.Clamp(val, min, max), Increment = inc, Font = new Font("Segoe UI", 10.5f) }; p.Controls.Add(n); return n; }
@@ -72,12 +73,11 @@ static class VmApp
 
         L("RAM (MB)", 24, 272, 10); var ram = N(110, 268, 512, 32768, Cfg.Int("vm_ram", 2048), 256);
         L("CPUs", 230, 272, 10); var cpu = N(280, 268, 1, 16, Cfg.Int("vm_cpu", 2), 1);
-        L("Boot from", 400, 272, 10); var boot = new ComboBox { Bounds = new Rectangle(480, 268, 180, 28), DropDownStyle = ComboBoxStyle.DropDownList, Font = new Font("Segoe UI", 10.5f) };
+        L("Boot from", 400, 272, 10); boot = new ComboBox { Bounds = new Rectangle(480, 268, 180, 28), DropDownStyle = ComboBoxStyle.DropDownList, Font = new Font("Segoe UI", 10.5f) };
         boot.Items.AddRange(new object[] { "Disk (installed Linux)", "Installer ISO (first time)" }); boot.SelectedIndex = Math.Clamp(Cfg.Int("vm_boot", 1), 0, 1); p.Controls.Add(boot);
         L("First time: boot from the installer ISO, install Linux onto the disk, then switch to Disk.", 24, 312, 9.5f);
         L("Alpine: log in as root, run  setup-alpine.   Tip: turn on 'Windows Hypervisor Platform' in Windows Features for much faster speed.", 24, 336, 9.5f);
 
-        Button start = null!, stop = null!;
         start = B("▶  Start Full OS", 24, 456, 200, () =>
         {
             Cfg.Set("vm_ram", ((int)ram.Value).ToString()); Cfg.Set("vm_cpu", ((int)cpu.Value).ToString()); Cfg.Set("vm_boot", boot.SelectedIndex.ToString());
