@@ -107,9 +107,9 @@ class DesktopForm : Form
         ("Calculator", "🧮", Color.FromArgb(29,158,117), "calc"), ("Paint", "🎨", Color.FromArgb(212,83,126), "paint"),
         ("Terminal", "⌨", Color.FromArgb(68,68,80), "term"), ("Settings", "⚙", Color.FromArgb(95,94,110), "settings"),
         ("Browser", "🌐", Color.FromArgb(24,95,165), "web"), ("Screenshot", "📷", Color.FromArgb(127,119,221), "shot"),
-        ("Recycle Bin", "🗑", Color.FromArgb(120,125,135), "bin"), ("MLD Store", "🛍", Color.FromArgb(212,83,126), "store"), ("Task Manager", "📊", Color.FromArgb(29,158,117), "tm"),
+        ("Recycle Bin", "🗑", Color.FromArgb(120,125,135), "bin"), ("MLD Store", "🛍", Color.FromArgb(212,83,126), "store"), ("Task Manager", "📊", Color.FromArgb(29,158,117), "tm"), ("Vault", "🔐", Color.FromArgb(60,60,110), "vault"),
     };
-    static readonly string[] OnDesk = { "files", "vm", "store", "bin", "web", "settings", "notepad", "calc", "paint", "term" };
+    static readonly string[] OnDesk = { "files", "vm", "store", "vault", "bin", "web", "settings", "notepad", "calc", "paint", "term" };
 
     public DesktopForm()
     {
@@ -293,11 +293,13 @@ class DesktopForm : Form
             case "photo": if (arg != null) AddWin(Path.GetFileName(arg), "🖼", Tools.Photo(arg), new Size(760, 540)); break;
             case "shot": Shot(); break;
             case "bin":
+            case "vault":
             case "vm":
             case "settings":
-                var title = k == "bin" ? "Recycle Bin" : k == "vm" ? "Full OS" : "Settings"; var ex = wins.FirstOrDefault(x => x.w.Title == title).w;
+                var title = k == "bin" ? "Recycle Bin" : k == "vm" ? "Full OS" : k == "vault" ? "Private Vault" : "Settings"; var ex = wins.FirstOrDefault(x => x.w.Title == title).w;
                 if (ex != null) { ex.Visible = true; ex.BringToFront(); Sync(); }
                 else if (k == "bin") AddWin(title, "🗑", Views.BinView(this), new Size(620, 420));
+                else if (k == "vault") AddWin(title, "🔐", VaultApp.View(this), new Size(680, 460));
                 else if (k == "vm") AddWin(title, "🖥", VmApp.View(this), new Size(720, 540));
                 else AddWin(title, "⚙", Views.Settings(this, int.TryParse(arg, out var pg) ? pg : 0), new Size(900, 600));
                 break;
