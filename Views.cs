@@ -44,7 +44,7 @@ static class Views
         string e = "";
         foreach (var key in k)
         {
-            var b = new Button { Text = key, Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Segoe UI", 15), Margin = new Padding(3), Cursor = Cursors.Hand };
+            var b = new RoundButton { Text = key, Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Font = new Font("Segoe UI", 15), Margin = new Padding(3), Cursor = Cursors.Hand };
             b.BackColor = key == "=" ? Theme.Accent : "÷×−+".Contains(key) ? Color.FromArgb(70, 70, 100) : Color.FromArgb(52, 52, 68); b.FlatAppearance.BorderSize = 0;
             var kk = key;
             b.Click += (_, _) =>
@@ -95,9 +95,9 @@ static class Views
         Color col = Color.Black; int size = 4; Point? last = null;
         foreach (var c in new[] { Color.Black, Color.Red, Color.Orange, Color.Green, Color.Blue, Color.Purple, Color.White })
         {
-            var cc = c; var b = new Button { Size = new Size(28, 28), BackColor = c, FlatStyle = FlatStyle.Flat }; b.Click += (_, _) => col = cc; tools.Controls.Add(b);
+            var cc = c; var b = new RoundButton { Size = new Size(28, 28), BackColor = c, FlatStyle = FlatStyle.Flat }; b.Click += (_, _) => col = cc; tools.Controls.Add(b);
         }
-        Button T(string t, Action a) { var b = new Button { Text = t, AutoSize = true, Height = 28 }; b.Click += (_, _) => a(); tools.Controls.Add(b); return b; }
+        Button T(string t, Action a) { var b = new RoundButton { Text = t, AutoSize = true, Height = 28 }; b.Click += (_, _) => a(); tools.Controls.Add(b); return b; }
         T("Thinner", () => size = Math.Max(1, size - 2)); T("Thicker", () => size += 2);
         T("Clear", () => { using var g = Graphics.FromImage(bmp); g.Clear(Color.White); pb.Invalidate(); });
         T("Save", () => { var f = U.Unique(Paths.Desktop, "Painting.png"); bmp.Save(f, System.Drawing.Imaging.ImageFormat.Png); sh.Reload(); sh.Toast("🎨 Saved " + Path.GetFileName(f)); });
@@ -122,7 +122,7 @@ static class Views
             lv.Items.Clear();
             foreach (var d in Bin.Items()) { var o = File.Exists(d + ".orig") ? File.ReadAllText(d + ".orig") : ""; lv.Items.Add(new ListViewItem(new[] { Bin.Name(d), Path.GetDirectoryName(o) ?? "" }) { Tag = d }); }
         }
-        Button B(string t, Action a) { var b = new Button { Text = t, AutoSize = true, Height = 30 }; b.Click += (_, _) => a(); top.Controls.Add(b); return b; }
+        Button B(string t, Action a) { var b = new RoundButton { Text = t, AutoSize = true, Height = 30 }; b.Click += (_, _) => a(); top.Controls.Add(b); return b; }
         B("↩ Restore", () => { foreach (ListViewItem it in lv.SelectedItems) try { Bin.Restore((string)it.Tag!); } catch { } Fill(); sh.Reload(); });
         B("🗑 Empty Recycle Bin", () => { if (MessageBox.Show("Delete everything permanently?", "Recycle Bin", MessageBoxButtons.YesNo) == DialogResult.Yes) { Bin.Empty(); Fill(); } });
         p.Controls.Add(lv); p.Controls.Add(top); Fill(); return p;
@@ -132,9 +132,9 @@ static class Views
     {
         var p = new Panel(); var top = new Panel { Dock = DockStyle.Top, Height = 38, BackColor = Color.FromArgb(240, 240, 245) };
         var path = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Font = new Font("Segoe UI", 10) };
-        var up = new Button { Text = "↑", Width = 40, Dock = DockStyle.Left }; var nf = new Button { Text = "＋ Folder", Width = 90, Dock = DockStyle.Right }; var sb = new TextBox { Dock = DockStyle.Right, Width = 150, Font = new Font("Segoe UI", 10), PlaceholderText = "Search" };
+        var up = new RoundButton { Text = "↑", Width = 40, Dock = DockStyle.Left }; var nf = new RoundButton { Text = "＋ Folder", Width = 90, Dock = DockStyle.Right }; var sb = new TextBox { Dock = DockStyle.Right, Width = 150, Font = new Font("Segoe UI", 10), PlaceholderText = "Search" };
         top.Controls.Add(path); top.Controls.Add(up); top.Controls.Add(nf); top.Controls.Add(sb);
-        var il = new ImageList { ImageSize = new Size(40, 40), ColorDepth = ColorDepth.Depth32Bit };
+        var il = new ImageList { ImageSize = Ui.D(40, 40), ColorDepth = ColorDepth.Depth32Bit };
         var lv = new ListView { Dock = DockStyle.Fill, View = View.LargeIcon, LargeImageList = il, LabelEdit = true, Font = new Font("Segoe UI", 9.5f) };
         string cur = start, filter = "";
         void Go(string d)
@@ -196,11 +196,11 @@ static class Views
         Action<int> show = _ => { };
         for (int i = 0; i < names.Length; i++)
         {
-            int k = i; var b = new Button { Text = names[i], Bounds = new Rectangle(8, 14 + i * 46, 184, 40), FlatStyle = FlatStyle.Flat, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Emoji", 10.5f), BackColor = nav.BackColor };
+            int k = i; var b = new RoundButton { Text = names[i], Bounds = new Rectangle(8, 14 + i * 46, 184, 40), FlatStyle = FlatStyle.Flat, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Emoji", 10.5f), BackColor = nav.BackColor };
             b.FlatAppearance.BorderSize = 0; b.Click += (_, _) => show(k); nav.Controls.Add(b);
         }
         Label L(string t, int x, int y, float sz = 10, bool bold = false) { var l = new Label { Text = t, Location = new Point(x, y), AutoSize = true, Font = new Font("Segoe UI", sz, bold ? FontStyle.Bold : FontStyle.Regular) }; page.Controls.Add(l); return l; }
-        Button B(string t, int x, int y, int w, Action a) { var b = new Button { Text = t, Bounds = new Rectangle(x, y, w, 34), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White, Cursor = Cursors.Hand }; b.FlatAppearance.BorderSize = 0; b.Click += (_, _) => a(); page.Controls.Add(b); return b; }
+        Button B(string t, int x, int y, int w, Action a) { var b = new RoundButton { Text = t, Bounds = new Rectangle(x, y, w, 34), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White, Cursor = Cursors.Hand }; b.FlatAppearance.BorderSize = 0; b.Click += (_, _) => a(); page.Controls.Add(b); return b; }
         TextBox T(int x, int y, int w, bool pw = false) { var t = new TextBox { Bounds = new Rectangle(x, y, w, 28), UseSystemPasswordChar = pw, Font = new Font("Segoe UI", 10.5f) }; page.Controls.Add(t); return t; }
         string? Pick() { using var d = new OpenFileDialog { Filter = "Images|*.png;*.jpg;*.jpeg;*.bmp" }; return d.ShowDialog() == DialogResult.OK ? d.FileName : null; }
 
@@ -218,7 +218,7 @@ static class Views
                         pb.Click += (_, _) => { Cfg.Set("wp", idx.ToString()); Cfg.Set("wallimg", ""); sh.ApplyLook(); show(0); };
                         page.Controls.Add(pb); L(Theme.P[i].N + (on ? "  ✓" : ""), 24 + i % 3 * 200, 202 + i / 3 * 130, 9);
                     }
-                    B("🖼  Use my own picture…", 24, 360, 220, () => { var f = Pick(); if (f != null) { Cfg.Set("wallimg", U.SaveImg(f, "wallpaper")); sh.ApplyLook(); show(0); } });
+                    B("🖼  Use my own picture…", 24, 96 + ((Theme.P.Length + 2) / 3) * 130 + 8, 220, () => { var f = Pick(); if (f != null) { Cfg.Set("wallimg", U.SaveImg(f, "wallpaper")); sh.ApplyLook(); show(0); } });
                     break;
                 case 1:
                     L("Display", 24, 18, 18, true); var scr = Screen.PrimaryScreen!.Bounds; L($"Resolution: {scr.Width} × {scr.Height}", 24, 62, 11);
@@ -272,10 +272,11 @@ static class Views
                     B("⬆  Check for updates", 24, 230, 200, async () =>
                     {
                         ul.Text = "Checking...";
-                        try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { ul.Text = "Version " + u.latest + " found. Downloading..."; await Updater.Apply(u.url); } else ul.Text = "You're up to date ✅"; }
+                        try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { ul.Text = "Version " + u.latest + " found. Downloading..."; var card = sh.NewDl("Updating USB Desktop", null); await Updater.Apply(u.url, card.Report); } else ul.Text = "You're up to date ✅"; }
                         catch (Exception ex) { ul.Text = "Couldn't check: " + ex.Message; }
                     }); break;
             }
+            Ui.Skin(page); Ui.Fit(page);
         };
         show(Math.Clamp(start, 0, 6)); return root;
     }

@@ -13,23 +13,17 @@ static class VmApp
 
     static async Task<string> Latest(string dir, string pattern)
     {
-        var html = await http.GetStringAsync(dir);
+        var html = await Net.Text(dir);
         var m = Regex.Matches(html, pattern).Select(x => x.Value).Distinct().OrderBy(x => x).ToList();
         if (m.Count == 0) throw new Exception("Couldn't find the download. Check your internet.");
         return dir + m.Last();
     }
-    static async Task Download(string url, string dest, ProgressBar pb, Label st)
+    static async Task Dl(DesktopForm sh, string url, string dest, string title)
     {
-        using var r = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead); r.EnsureSuccessStatusCode();
-        long tot = r.Content.Headers.ContentLength ?? -1, got = 0; int n; var buf = new byte[81920]; var sw = Stopwatch.StartNew();
-        using (var s = await r.Content.ReadAsStreamAsync())
-        using (var f = File.Create(dest + ".part"))
-            while ((n = await s.ReadAsync(buf)) > 0)
-            {
-                await f.WriteAsync(buf.AsMemory(0, n)); got += n;
-                if (sw.ElapsedMilliseconds > 250 && !pb.IsDisposed) { sw.Restart(); if (tot > 0) pb.Value = (int)(got * 100 / tot); st.Text = $"Downloading… {got / 1048576} MB" + (tot > 0 ? $" of {tot / 1048576} MB" : ""); }
-            }
-        File.Move(dest + ".part", dest, true); if (!pb.IsDisposed) pb.Value = 100;
+        var cts = new CancellationTokenSource(); var card = sh.NewDl(title, cts);
+        try { await Net.Download(url, dest, card.Report, cts.Token); card.Done("Downloaded"); }
+        catch (OperationCanceledException) { card.Fail("Cancelled"); throw; }
+        catch (Exception ex) { card.Fail(ex.Message); throw; }
     }
 
     public static Control View(DesktopForm sh)
@@ -37,20 +31,20 @@ static class VmApp
         var p = new Panel { BackColor = Color.White, AutoScroll = true };
         Button start = null!, stop = null!; ComboBox boot = null!;
         Label L(string t, int x, int y, float sz = 10, bool b = false) { var l = new Label { Text = t, Location = new Point(x, y), AutoSize = true, Font = new Font("Segoe UI", sz, b ? FontStyle.Bold : FontStyle.Regular) }; p.Controls.Add(l); return l; }
-        Button B(string t, int x, int y, int w, Func<Task> a) { var b = new Button { Text = t, Bounds = new Rectangle(x, y, w, 34), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White, Cursor = Cursors.Hand }; b.FlatAppearance.BorderSize = 0; b.Click += async (_, _) => { try { await a(); } catch (Exception ex) { st.Text = "⚠ " + ex.Message; } Refresh(); }; p.Controls.Add(b); return b; }
+        Button B(string t, int x, int y, int w, Func<Task> a) { var b = new RoundButton { Text = t, Bounds = new Rectangle(x, y, w, 34), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White, Cursor = Cursors.Hand }; b.FlatAppearance.BorderSize = 0; b.Click += async (_, _) => { try { await a(); } catch (Exception ex) { st.Text = "⚠ " + ex.Message; } Refresh(); }; p.Controls.Add(b); return b; }
         NumericUpDown N(int x, int y, int min, int max, int val, int inc) { var n = new NumericUpDown { Bounds = new Rectangle(x, y, 90, 28), Minimum = min, Maximum = max, Value = Math.Clamp(val, min, max), Increment = inc, Font = new Font("Segoe UI", 10.5f) }; p.Controls.Add(n); return n; }
 
         L("Full OS (Linux)", 24, 16, 18, true);
         L("Runs a real Linux computer inside a window. Everything is saved on the USB.", 24, 54, 10);
         var s1 = L("", 24, 96, 11); var s2 = L("", 24, 156, 11); var s3 = L("", 24, 216, 11);
-        st = L("", 24, 420, 10); pb = new ProgressBar { Bounds = new Rectangle(24, 396, 640, 14) }; p.Controls.Add(pb);
+        st = L("", 24, 420, 10);
 
         L("1  QEMU engine", 24, 76, 10, true); L("2  Linux installer", 24, 136, 10, true); L("3  Virtual disk", 24, 196, 10, true);
         B("Install QEMU", 420, 90, 150, async () =>
         {
             if (System.Runtime.InteropServices.RuntimeInformation.OSArchitecture != System.Runtime.InteropServices.Architecture.X64) throw new Exception("Full OS needs 64-bit Intel/AMD Windows");
             var url = await Latest("https://qemu.weilnetz.de/w64/", @"qemu-w64-setup-\d+\.exe(?![\w.])"); var inst = Path.Combine(Paths.Vm, "qemu-setup.exe");
-            await Download(url, inst, pb, st); st.Text = "Approve the Windows prompt to finish installing…"; Directory.CreateDirectory(QemuDir);
+            await Dl(sh, url, inst, "QEMU installer"); st.Text = "Approve the Windows prompt to finish installing…"; Directory.CreateDirectory(QemuDir);
             using var pr = Process.Start(new ProcessStartInfo(inst, "/S /D=" + QemuDir) { UseShellExecute = true, Verb = "runas" })!; await pr.WaitForExitAsync();
             try { File.Delete(inst); } catch { }
             st.Text = Exe("qemu-system-x86_64.exe") != null ? "✅ QEMU installed" : "QEMU didn't install. Try again and press Yes on the prompt.";
@@ -58,12 +52,12 @@ static class VmApp
         B("Get Alpine (70 MB)", 420, 150, 150, async () =>
         {
             var url = await Latest("https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/", @"alpine-virt-\d+\.\d+\.\d+-x86_64\.iso(?![\w.])");
-            await Download(url, Path.Combine(Paths.Vm, Path.GetFileName(url)), pb, st); st.Text = "✅ Alpine downloaded";
+            await Dl(sh, url, Path.Combine(Paths.Vm, Path.GetFileName(url)), "Linux installer"); st.Text = "✅ Alpine downloaded";
         });
         B("Get Debian XFCE (3 GB)", 576, 150, 170, async () =>
         {
             var url = await Latest("https://cdimage.debian.org/debian-cd/current-live/amd64/iso-hybrid/", @"debian-live-\d+\.\d+\.\d+-amd64-xfce\.iso(?![\w.])");
-            await Download(url, Path.Combine(Paths.Vm, Path.GetFileName(url)), pb, st); st.Text = "✅ Debian downloaded";
+            await Dl(sh, url, Path.Combine(Paths.Vm, Path.GetFileName(url)), "Linux installer"); st.Text = "✅ Debian downloaded";
         });
         var gb = N(420, 214, 4, 128, Cfg.Int("vm_gb", 16), 4); L("GB", 516, 218, 10);
         B("Create disk", 560, 210, 120, async () =>
@@ -100,5 +94,5 @@ static class VmApp
         }
         boot.SelectedIndexChanged += (_, _) => Refresh(); Refresh(); return p;
     }
-    static Label st = null!; static ProgressBar pb = null!;
+    static Label st = null!;
 }

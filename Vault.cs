@@ -46,7 +46,7 @@ static class VaultApp
             TextBox? c2 = null;
             if (!exists) { c2 = new TextBox { Bounds = new Rectangle(24, 170, 300, 30), UseSystemPasswordChar = true, Font = new Font("Segoe UI", 11), PlaceholderText = "Confirm password" }; p.Controls.Add(c2); }
             var msg = L("", exists ? 224 : 270);
-            var go = new Button { Text = exists ? "Unlock" : "Create vault", Bounds = new Rectangle(24, exists ? 174 : 214, 150, 36), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White };
+            var go = new RoundButton { Text = exists ? "Unlock" : "Create vault", Bounds = new Rectangle(24, exists ? 174 : 214, 150, 36), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White };
             go.Click += (_, _) =>
             {
                 try
@@ -77,7 +77,7 @@ static class VaultApp
                     lv.Items.Add(new ListViewItem(new[] { kv.Key, sz > 1048576 ? sz / 1048576 + " MB" : sz / 1024 + " KB" }) { Tag = kv.Value });
                 }
             }
-            Button B(string t, Action a) { var b = new Button { Text = t, AutoSize = true, Height = 30 }; b.Click += (_, _) => a(); top.Controls.Add(b); return b; }
+            Button B(string t, Action a) { var b = new RoundButton { Text = t, AutoSize = true, Height = 30 }; b.Click += (_, _) => a(); top.Controls.Add(b); return b; }
             B("➕ Add files", () =>
             {
                 using var d = new OpenFileDialog { Multiselect = true }; if (d.ShowDialog() != DialogResult.OK) return;

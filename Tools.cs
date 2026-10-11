@@ -11,13 +11,13 @@ class IdleFilter : IMessageFilter
 
 class ClockWidget : Control
 {
-    public ClockWidget() { SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true); BackColor = Color.Transparent; Size = new Size(280, 110); }
+    public ClockWidget() { SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true); BackColor = Color.Transparent; Size = Ui.D(280, 110); }
     protected override void OnPaint(PaintEventArgs e)
     {
         var t = DateTime.Now.ToString(Cfg.Get("h24", "1") == "1" ? "HH:mm" : "h:mm"); var d = DateTime.Now.ToString("dddd, MMMM d");
-        using var f1 = new Font("Segoe UI Light", 56, GraphicsUnit.Pixel); using var f2 = new Font("Segoe UI", 18, GraphicsUnit.Pixel);
-        TextRenderer.DrawText(e.Graphics, t, f1, new Point(5, 5), Color.Black); TextRenderer.DrawText(e.Graphics, t, f1, new Point(3, 3), Color.White);
-        TextRenderer.DrawText(e.Graphics, d, f2, new Point(9, 75), Color.Black); TextRenderer.DrawText(e.Graphics, d, f2, new Point(8, 74), Color.White);
+        using var f1 = new Font("Segoe UI Light", Ui.D(56), GraphicsUnit.Pixel); using var f2 = new Font("Segoe UI", Ui.D(18), GraphicsUnit.Pixel);
+        TextRenderer.DrawText(e.Graphics, t, f1, new Point(Ui.D(5), Ui.D(5)), Color.Black); TextRenderer.DrawText(e.Graphics, t, f1, new Point(Ui.D(3), Ui.D(3)), Color.White);
+        TextRenderer.DrawText(e.Graphics, d, f2, new Point(Ui.D(9), Ui.D(78)), Color.Black); TextRenderer.DrawText(e.Graphics, d, f2, new Point(Ui.D(8), Ui.D(77)), Color.White);
     }
 }
 
@@ -26,38 +26,38 @@ class Splash : Panel
     readonly System.Windows.Forms.Timer t = new() { Interval = 90 }; int n; readonly Bitmap bg, av;
     public Splash(Size s)
     {
-        Bounds = new Rectangle(Point.Empty, s); DoubleBuffered = true; bg = Theme.Lock(s); av = U.Avatar(110);
+        Bounds = new Rectangle(Point.Empty, s); DoubleBuffered = true; bg = Theme.Lock(s); av = U.Avatar(Ui.D(110));
         t.Tick += (_, _) => { n++; Invalidate(); if (n > 24) { t.Stop(); Parent?.Controls.Remove(this); Dispose(); } }; t.Start();
     }
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics; g.DrawImage(bg, 0, 0);
         using (var b = new SolidBrush(Color.FromArgb(110, 0, 0, 0))) g.FillRectangle(b, ClientRectangle);
-        g.DrawImage(av, (Width - 110) / 2, Height / 2 - 120);
+        g.DrawImage(av, (Width - Ui.D(110)) / 2, Height / 2 - Ui.D(120));
         using var f = new Font("Segoe UI Light", 26);
-        TextRenderer.DrawText(g, "Welcome, " + Cfg.Get("name", Environment.UserName), f, new Rectangle(0, Height / 2 + 10, Width, 50), Color.White, TextFormatFlags.HorizontalCenter);
-        for (int i = 0; i < 5; i++) { using var b = new SolidBrush(i == n % 5 ? Color.White : Color.FromArgb(90, 255, 255, 255)); g.FillEllipse(b, Width / 2 - 50 + i * 20, Height / 2 + 90, 10, 10); }
+        TextRenderer.DrawText(g, "Welcome, " + Cfg.Get("name", Environment.UserName), f, new Rectangle(0, Height / 2 + Ui.D(10), Width, Ui.D(60)), Color.White, TextFormatFlags.HorizontalCenter);
+        for (int i = 0; i < 5; i++) { using var b = new SolidBrush(i == n % 5 ? Color.White : Color.FromArgb(90, 255, 255, 255)); g.FillEllipse(b, Width / 2 - Ui.D(50) + i * Ui.D(20), Height / 2 + Ui.D(90), Ui.D(10), Ui.D(10)); }
     }
 }
 
-class QuickPanel : Panel
+class QuickPanel : RoundPanel
 {
     readonly DesktopForm sh; readonly ListBox notes = new(); readonly Label net = new(), bat = new(); readonly TrackBar vol = new();
     [DllImport("winmm.dll")] static extern int waveOutSetVolume(IntPtr h, uint v);
     [DllImport("winmm.dll")] static extern int waveOutGetVolume(IntPtr h, out uint v);
     public QuickPanel(DesktopForm sh)
     {
-        this.sh = sh; Size = new Size(350, 590); BackColor = Color.FromArgb(32, 32, 48); Visible = false;
+        this.sh = sh; Size = new Size(350, 590); Floating = true; Fill = Ui.Surface; Visible = false;
         Label L(string t, int y) { var l = new Label { Text = t, Location = new Point(16, y), AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI Emoji", 10, FontStyle.Bold) }; Controls.Add(l); return l; }
         Controls.Add(new MonthCalendar { Location = new Point(61, 16) });
         L("🔊  Volume", 196); vol.Bounds = new Rectangle(12, 220, 322, 45); vol.Maximum = 100; vol.TickFrequency = 25;
         vol.Scroll += (_, _) => { uint v = (uint)(vol.Value * 65535 / 100); waveOutSetVolume(IntPtr.Zero, (v & 0xFFFF) | (v << 16)); }; Controls.Add(vol);
         foreach (var l in new[] { net, bat }) { l.AutoSize = true; l.ForeColor = Color.White; l.Font = new Font("Segoe UI Emoji", 10); Controls.Add(l); }
         net.Location = new Point(16, 280); bat.Location = new Point(16, 318);
-        var wb = new Button { Text = "Wi-Fi settings", Bounds = new Rectangle(220, 274, 114, 30), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(55, 55, 80) };
+        var wb = new RoundButton { Text = "Wi-Fi settings", Bounds = new Rectangle(220, 274, 114, 30), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(55, 55, 80) };
         wb.FlatAppearance.BorderSize = 0; wb.Click += (_, _) => U.Open("ms-settings:network-wifi"); Controls.Add(wb);
         L("🔔  Notifications", 354);
-        var clr = new Button { Text = "Clear", Bounds = new Rectangle(260, 350, 74, 26), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(55, 55, 80) };
+        var clr = new RoundButton { Text = "Clear", Bounds = new Rectangle(260, 350, 74, 26), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(55, 55, 80) };
         clr.FlatAppearance.BorderSize = 0; clr.Click += (_, _) => { sh.Notes.Clear(); Refresh2(); }; Controls.Add(clr);
         notes.Bounds = new Rectangle(16, 384, 318, 170); notes.BackColor = Color.FromArgb(44, 44, 62); notes.ForeColor = Color.White; notes.BorderStyle = BorderStyle.None; Controls.Add(notes);
     }
@@ -100,7 +100,7 @@ static class Tools
         var pb = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom };
         var bar = new Panel { Dock = DockStyle.Bottom, Height = 40, BackColor = Color.FromArgb(32, 32, 44) };
         var cap = new Label { Dock = DockStyle.Fill, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter };
-        Button Nb(string t, DockStyle d) => new() { Text = t, Dock = d, Width = 60, FlatStyle = FlatStyle.Flat, ForeColor = Color.White };
+        Button Nb(string t, DockStyle d) => new RoundButton { Text = t, Dock = d, Width = 60, FlatStyle = FlatStyle.Flat, ForeColor = Color.White };
         var prev = Nb("◀", DockStyle.Left); var next = Nb("▶", DockStyle.Right);
         var exts = new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif" };
         var files = Directory.GetFiles(Path.GetDirectoryName(path)!).Where(f => exts.Contains(Path.GetExtension(f).ToLower())).OrderBy(f => f).ToList();
@@ -118,7 +118,7 @@ static class Tools
         top.Controls.AddRange(new Control[] { cpuL, ramL, cpuB, ramB });
         var lv = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, Font = new Font("Segoe UI", 10) };
         lv.Columns.Add("Name", 260); lv.Columns.Add("PID", 80); lv.Columns.Add("Memory (MB)", 110);
-        var end = new Button { Text = "End task", Dock = DockStyle.Bottom, Height = 36, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(150, 60, 60), ForeColor = Color.White };
+        var end = new RoundButton { Text = "End task", Dock = DockStyle.Bottom, Height = 36, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(150, 60, 60), ForeColor = Color.White };
         end.Click += (_, _) =>
         {
             if (lv.SelectedItems.Count == 0) return; var pid = int.Parse(lv.SelectedItems[0].SubItems[1].Text);

@@ -26,29 +26,35 @@ static class Theme
 {
     public static readonly (string N, Color A, Color B, Color C)[] P =
     {
-        ("Aurora", Color.FromArgb(38,33,92), Color.FromArgb(83,74,183), Color.FromArgb(29,158,117)),
-        ("Ocean", Color.FromArgb(4,44,83), Color.FromArgb(24,95,165), Color.FromArgb(93,202,165)),
-        ("Sunset", Color.FromArgb(75,21,40), Color.FromArgb(212,83,126), Color.FromArgb(239,159,39)),
-        ("Forest", Color.FromArgb(8,80,65), Color.FromArgb(29,158,117), Color.FromArgb(151,196,89)),
-        ("Midnight", Color.FromArgb(18,18,28), Color.FromArgb(60,60,90), Color.FromArgb(127,119,221)),
+        ("Aurora", Color.FromArgb(24,20,66), Color.FromArgb(108,92,231), Color.FromArgb(29,198,150)),
+        ("Ocean", Color.FromArgb(4,30,60), Color.FromArgb(30,136,229), Color.FromArgb(93,202,225)),
+        ("Sunset", Color.FromArgb(60,16,40), Color.FromArgb(236,72,153), Color.FromArgb(255,170,60)),
+        ("Forest", Color.FromArgb(6,50,42), Color.FromArgb(16,185,129), Color.FromArgb(170,220,90)),
+        ("Midnight", Color.FromArgb(12,12,22), Color.FromArgb(99,102,241), Color.FromArgb(127,119,221)),
+        ("Neon", Color.FromArgb(10,8,34), Color.FromArgb(139,92,246), Color.FromArgb(0,220,255)),
+        ("Rose", Color.FromArgb(46,10,38), Color.FromArgb(244,63,94), Color.FromArgb(255,190,120)),
+        ("Mint", Color.FromArgb(6,34,44), Color.FromArgb(20,184,166), Color.FromArgb(140,255,200)),
     };
     public static int Idx => Math.Clamp(Cfg.Int("wp", 0), 0, P.Length - 1);
     public static Color Accent => P[Idx].B;
 
+    static void Glow(Graphics g, float cx, float cy, float r, Color c, int alpha)
+    {
+        using var path = new GraphicsPath(); path.AddEllipse(cx - r, cy - r, 2 * r, 2 * r);
+        using var pg = new PathGradientBrush(path) { CenterColor = Color.FromArgb(alpha, c), SurroundColors = new[] { Color.FromArgb(0, c) } };
+        g.FillPath(pg, path);
+    }
     public static Bitmap Preset(Size s, int i)
     {
-        var (_, ca, cb, cc) = P[i];
-        int W = Math.Max(s.Width, 1), H = Math.Max(s.Height, 1);
+        var (_, ca, cb, cc) = P[i]; int W = Math.Max(s.Width, 8), H = Math.Max(s.Height, 8);
         var bm = new Bitmap(W, H); using var g = Graphics.FromImage(bm); g.SmoothingMode = SmoothingMode.AntiAlias;
-        using (var lg = new LinearGradientBrush(new Rectangle(0, 0, W, H), ca, cb, 35f)) g.FillRectangle(lg, 0, 0, W, H);
-        using (var br = new SolidBrush(Color.FromArgb(70, cc))) g.FillEllipse(br, W * 0.55f, -H * 0.35f, H * 1.1f, H * 1.1f);
-        using (var br = new SolidBrush(Color.FromArgb(50, cc))) g.FillEllipse(br, -H * 0.3f, H * 0.5f, H * 0.9f, H * 0.9f);
-        using (var br = new SolidBrush(Color.FromArgb(35, 255, 255, 255))) g.FillEllipse(br, W * 0.72f, H * 0.55f, H * 0.5f, H * 0.5f);
+        using (var lg = new LinearGradientBrush(new Rectangle(0, 0, W, H), ca, Ui.Mix(ca, cb, 0.4f), 35f)) g.FillRectangle(lg, 0, 0, W, H);
+        Glow(g, W * 0.82f, H * 0.12f, H * 0.95f, cc, 150); Glow(g, W * 0.12f, H * 0.95f, H * 0.85f, cb, 170); Glow(g, W * 0.5f, H * 0.55f, H * 0.6f, cb, 70); Glow(g, W * 0.95f, H * 0.9f, H * 0.5f, cc, 60);
         for (int k = 0; k < 3; k++)
         {
             var pts = new PointF[9];
-            for (int x = 0; x < 9; x++) pts[x] = new PointF(W * x / 8f, H * (0.62f + k * 0.09f) + (float)Math.Sin(x * 0.9 + k) * H * 0.05f);
-            using var pen = new Pen(Color.FromArgb(45, 255, 255, 255), 2); g.DrawCurve(pen, pts, 0.5f);
+            for (int x = 0; x < 9; x++) pts[x] = new PointF(W * x / 8f, H * (0.64f + k * 0.08f) + (float)Math.Sin(x * 0.9 + k) * H * 0.05f);
+            using var pen = new Pen(Color.FromArgb(34, 255, 255, 255), Math.Max(1.5f, H / 400f)); g.DrawCurve(pen, pts, 0.5f);
         }
         return bm;
     }
@@ -77,24 +83,37 @@ static class U
 {
     public static GraphicsPath Round(Rectangle r, int rad)
     {
-        var p = new GraphicsPath(); int d = rad * 2;
+        var p = new GraphicsPath(); int d = Math.Max(2, Math.Min(rad * 2, Math.Min(r.Width, r.Height)));
         p.AddArc(r.X, r.Y, d, d, 180, 90); p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
         p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90); p.AddArc(r.X, r.Bottom - d, d, d, 90, 90); p.CloseFigure(); return p;
     }
-    public static Bitmap Tile(string glyph, Color c, int s = 56)
+    public static Bitmap Tile(string glyph, Color c, int s = 64)
     {
-        var b = new Bitmap(s, s); using var g = Graphics.FromImage(b); g.SmoothingMode = SmoothingMode.AntiAlias;
-        using var p = Round(new Rectangle(0, 0, s - 1, s - 1), s / 4);
-        using var br = new LinearGradientBrush(new Rectangle(0, 0, s, s), ControlPaint.Light(c, 0.25f), ControlPaint.Dark(c, 0.05f), 60f);
-        g.FillPath(br, p);
-        using var f = new Font("Segoe UI Emoji", s * 0.42f, GraphicsUnit.Pixel);
+        var b = new Bitmap(s, s); using var g = Graphics.FromImage(b); g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        var r = new Rectangle(1, 1, s - 3, s - 3); using var p = Round(r, s / 4);
+        using (var br = new LinearGradientBrush(r, ControlPaint.Light(c, 0.35f), ControlPaint.Dark(c, 0.12f), 55f)) g.FillPath(br, p);
+        g.SetClip(p); using (var gl = new LinearGradientBrush(new Rectangle(0, 0, s, s / 2 + 2), Color.FromArgb(80, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f)) g.FillRectangle(gl, 0, 0, s, s / 2 + 2); g.ResetClip();
+        using (var pen = new Pen(Color.FromArgb(70, 255, 255, 255), 1)) g.DrawPath(pen, p);
+        using var f = new Font("Segoe UI Emoji", s * 0.44f, GraphicsUnit.Pixel);
         TextRenderer.DrawText(g, glyph, f, new Rectangle(0, 0, s, s), Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         return b;
     }
+    static readonly Dictionary<string, (string, Color)> kinds = new()
+    {
+        [".png"] = ("🖼", Color.FromArgb(236, 72, 153)), [".jpg"] = ("🖼", Color.FromArgb(236, 72, 153)), [".jpeg"] = ("🖼", Color.FromArgb(236, 72, 153)), [".gif"] = ("🖼", Color.FromArgb(236, 72, 153)), [".bmp"] = ("🖼", Color.FromArgb(236, 72, 153)),
+        [".mp3"] = ("🎵", Color.FromArgb(139, 92, 246)), [".wav"] = ("🎵", Color.FromArgb(139, 92, 246)), [".mp4"] = ("🎬", Color.FromArgb(239, 68, 68)), [".mkv"] = ("🎬", Color.FromArgb(239, 68, 68)),
+        [".zip"] = ("📦", Color.FromArgb(217, 119, 6)), [".rar"] = ("📦", Color.FromArgb(217, 119, 6)), [".7z"] = ("📦", Color.FromArgb(217, 119, 6)), [".iso"] = ("💿", Color.FromArgb(100, 116, 139)),
+        [".txt"] = ("📝", Color.FromArgb(59, 130, 246)), [".md"] = ("📝", Color.FromArgb(59, 130, 246)), [".log"] = ("📝", Color.FromArgb(59, 130, 246)),
+        [".js"] = ("💻", Color.FromArgb(20, 184, 166)), [".cs"] = ("💻", Color.FromArgb(20, 184, 166)), [".py"] = ("💻", Color.FromArgb(20, 184, 166)), [".html"] = ("🌐", Color.FromArgb(20, 184, 166)), [".css"] = ("💻", Color.FromArgb(20, 184, 166)), [".json"] = ("💻", Color.FromArgb(20, 184, 166)), [".bat"] = ("💻", Color.FromArgb(20, 184, 166)),
+        [".pdf"] = ("📕", Color.FromArgb(220, 38, 38)), [".docx"] = ("📘", Color.FromArgb(37, 99, 235)), [".xlsx"] = ("📗", Color.FromArgb(22, 163, 74)), [".pptx"] = ("📙", Color.FromArgb(234, 88, 12)),
+    };
     public static Bitmap IconFor(string p)
     {
-        if (Directory.Exists(p)) return Tile("📁", Color.FromArgb(239, 159, 39), 48);
-        try { using var i = Icon.ExtractAssociatedIcon(p)!; return i.ToBitmap(); } catch { return Tile("📄", Color.FromArgb(95, 94, 90), 48); }
+        if (Directory.Exists(p)) return Tile("📁", Color.FromArgb(245, 158, 11));
+        var ext = Path.GetExtension(p).ToLower();
+        if (kinds.TryGetValue(ext, out var k)) return Tile(k.Item1, k.Item2);
+        if (ext == ".exe" || ext == ".lnk") { try { using var i = Icon.ExtractAssociatedIcon(p)!; var bm = new Bitmap(64, 64); using var g = Graphics.FromImage(bm); g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.DrawImage(i.ToBitmap(), 4, 4, 56, 56); return bm; } catch { } }
+        return Tile("📄", Color.FromArgb(100, 116, 139));
     }
     public static Bitmap? Load(string p) { try { using var i = Image.FromFile(p); return new Bitmap(i); } catch { return null; } }
     public static Bitmap Circle(Image src, int s)
@@ -110,7 +129,7 @@ static class U
         var f = Path.Combine(Paths.Data, "avatar.png"); var im = File.Exists(f) ? Load(f) : null;
         if (im != null) { using (im) return Circle(im, s); }
         var b = new Bitmap(s, s); using var g = Graphics.FromImage(b); g.SmoothingMode = SmoothingMode.AntiAlias;
-        using (var br = new SolidBrush(Theme.Accent)) g.FillEllipse(br, 0, 0, s - 1, s - 1);
+        using (var br = new LinearGradientBrush(new Rectangle(0, 0, s, s), Theme.Accent, Ui.Accent2, 45f)) g.FillEllipse(br, 0, 0, s - 1, s - 1);
         var n = Cfg.Get("name", Environment.UserName); var t = (n.Length > 0 ? n[..1] : "?").ToUpper();
         using var fn = new Font("Segoe UI", s * 0.42f, GraphicsUnit.Pixel);
         TextRenderer.DrawText(g, t, fn, new Rectangle(0, 0, s, s), Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
@@ -186,6 +205,7 @@ static class Program
     {
         foreach (var d in new[] { Paths.Desktop, Paths.Apps, Paths.Data, Paths.Vm, Paths.Bin, Paths.Shots }) Directory.CreateDirectory(d);
         ApplicationConfiguration.Initialize();
+        ToolStripManager.Renderer = new DarkRenderer();
         Application.ThreadException += (_, e) => Err(e.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, e) => Err((Exception)e.ExceptionObject);
         try
@@ -207,48 +227,49 @@ class LoginForm : Form
     readonly string uf = Path.Combine(Paths.Data, "user.txt");
     readonly bool first;
     readonly Label clock = new(), date = new(), name = new(), hint = new(), err = new();
-    readonly TextBox pass = new();
+    readonly TextBox pass;
     readonly PictureBox av = new();
     readonly Panel col = new();
+    readonly RoundButton go = new();
     Bitmap? bg; int fails;
-
-    static Label Lb(Color c, float sz, string fam = "Segoe UI") => new() { ForeColor = c, Font = new Font(fam, sz), BackColor = Color.Transparent, AutoSize = false, TextAlign = ContentAlignment.MiddleCenter };
 
     public LoginForm()
     {
         first = !File.Exists(uf);
-        FormBorderStyle = FormBorderStyle.None; WindowState = FormWindowState.Maximized; DoubleBuffered = true; KeyPreview = true;
-        var white = Color.FromArgb(245, 244, 255);
-        foreach (var l in new[] { clock, date, name, hint, err }) { }
-        var c1 = Lb(white, 54, "Segoe UI Light"); clock.Font = c1.Font; clock.ForeColor = white; clock.BackColor = Color.Transparent; clock.AutoSize = true; clock.Location = new Point(40, 26);
-        date.Font = new Font("Segoe UI", 15); date.ForeColor = Color.FromArgb(220, 218, 250); date.BackColor = Color.Transparent; date.AutoSize = true; date.Location = new Point(46, 138);
+        FormBorderStyle = FormBorderStyle.None; WindowState = FormWindowState.Maximized; DoubleBuffered = true; KeyPreview = true; BackColor = Ui.Bg;
+        var white = Color.FromArgb(246, 246, 255); var soft = Color.FromArgb(214, 216, 240);
+
+        clock.Font = new Font("Segoe UI Light", 54); clock.ForeColor = white; clock.BackColor = Color.Transparent; clock.AutoSize = true;
+        date.Font = Ui.F(15); date.ForeColor = soft; date.BackColor = Color.Transparent; date.AutoSize = true;
+        Tick(); clock.Location = new Point(Ui.D(44), Ui.D(24)); date.Location = new Point(Ui.D(50), clock.Bottom - Ui.D(4));
         Controls.Add(clock); Controls.Add(date);
 
-        col.Size = new Size(360, 380); col.BackColor = Color.Transparent;
-        av.Bounds = new Rectangle(110, 0, 140, 140); av.BackColor = Color.Transparent; av.SizeMode = PictureBoxSizeMode.Zoom; av.Image = U.Avatar(140);
-        if (first) { av.Cursor = Cursors.Hand; av.Click += (_, _) => { using var d = new OpenFileDialog { Filter = "Images|*.png;*.jpg;*.jpeg;*.bmp" }; if (d.ShowDialog() == DialogResult.OK && U.SetAvatar(d.FileName)) av.Image = U.Avatar(140); }; }
-        name.Font = new Font("Segoe UI Light", 22); name.ForeColor = white; name.BackColor = Color.Transparent; name.TextAlign = ContentAlignment.MiddleCenter; name.Text = Cfg.Get("name", Environment.UserName); name.SetBounds(0, 150, 360, 44);
-        hint.Font = new Font("Segoe UI", 10); hint.ForeColor = Color.FromArgb(220, 218, 250); hint.BackColor = Color.Transparent; hint.TextAlign = ContentAlignment.MiddleCenter;
-        hint.Text = first ? "Welcome! Click the circle to add a photo, then create a password" : "Enter your password"; hint.SetBounds(0, 196, 360, 24);
-        pass.UseSystemPasswordChar = true; pass.Font = new Font("Segoe UI", 13); pass.SetBounds(36, 232, 248, 34); pass.BackColor = Color.FromArgb(48, 42, 100); pass.ForeColor = Color.White; pass.BorderStyle = BorderStyle.FixedSingle;
-        var go = new Button { Text = "→", Font = new Font("Segoe UI", 13), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White, Bounds = new Rectangle(290, 232, 34, 34), Cursor = Cursors.Hand };
-        go.FlatAppearance.BorderSize = 0; go.Click += (_, _) => Submit();
-        err.Font = new Font("Segoe UI", 10); err.ForeColor = Color.FromArgb(255, 170, 170); err.BackColor = Color.Transparent; err.TextAlign = ContentAlignment.MiddleCenter; err.SetBounds(0, 274, 360, 24);
-        col.Controls.AddRange(new Control[] { av, name, hint, pass, go, err });
-        Controls.Add(col);
+        int cw = Ui.D(400); col.Size = new Size(cw, Ui.D(400)); col.BackColor = Color.Transparent;
+        int a = Ui.D(150); av.Bounds = new Rectangle((cw - a) / 2, 0, a, a); av.BackColor = Color.Transparent; av.SizeMode = PictureBoxSizeMode.Zoom; av.Image = U.Avatar(a);
+        if (first) { av.Cursor = Cursors.Hand; av.Click += (_, _) => { using var d = new OpenFileDialog { Filter = "Images|*.png;*.jpg;*.jpeg;*.bmp" }; if (d.ShowDialog() == DialogResult.OK && U.SetAvatar(d.FileName)) av.Image = U.Avatar(a); }; }
+        name.Font = new Font("Segoe UI Light", 24); name.ForeColor = white; name.BackColor = Color.Transparent; name.TextAlign = ContentAlignment.MiddleCenter; name.Text = Cfg.Get("name", Environment.UserName); name.SetBounds(0, Ui.D(166), cw, Ui.D(52));
+        hint.Font = Ui.F(10.5f); hint.ForeColor = soft; hint.BackColor = Color.Transparent; hint.TextAlign = ContentAlignment.TopCenter;
+        hint.Text = first ? "Welcome! Click the circle to add a photo, then create a password" : "Enter your password to continue"; hint.SetBounds(Ui.D(10), Ui.D(222), cw - Ui.D(20), Ui.D(46));
 
-        var usb = new Label { Text = "💾  Running from " + Path.GetPathRoot(Paths.Root), ForeColor = Color.FromArgb(220, 218, 250), BackColor = Color.Transparent, Font = new Font("Segoe UI Emoji", 10), AutoSize = true };
-        var off = new Button { Text = "⏻", Font = new Font("Segoe UI", 14), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Theme.Accent, Size = new Size(46, 46) };
-        off.FlatAppearance.BorderSize = 0; off.Click += (_, _) => DialogResult = DialogResult.Cancel;
+        var (box, tb) = Ui.Input("Password", true, 50); pass = tb; box.Floating = true; box.Fill = Color.FromArgb(40, 42, 70); tb.BackColor = box.Fill; box.SetBounds(Ui.D(30), Ui.D(276), cw - Ui.D(60), Ui.D(50));
+        go.Text = "→"; go.Pill = true; go.BackColor = Theme.Accent; go.Font = Ui.F(13, true); box.Controls.Add(go);
+        box.Resize += (_, _) => { go.SetBounds(box.Width - Ui.D(44), Ui.D(5), Ui.D(40), box.Height - Ui.D(10)); tb.Width = box.Width - Ui.D(18) - Ui.D(54); };
+        go.Click += (_, _) => Submit();
+        err.Font = Ui.F(10); err.ForeColor = Color.FromArgb(255, 150, 150); err.BackColor = Color.Transparent; err.TextAlign = ContentAlignment.MiddleCenter; err.SetBounds(0, Ui.D(336), cw, Ui.D(30));
+        col.Controls.AddRange(new Control[] { av, name, hint, box, err }); Controls.Add(col);
+
+        var usb = new Label { Text = "💾  Running from " + Path.GetPathRoot(Paths.Root), ForeColor = soft, BackColor = Color.Transparent, Font = Ui.F(10), AutoSize = true };
+        var off = new RoundButton { Text = "⏻", Font = Ui.F(14), Pill = true, BackColor = Color.FromArgb(46, 48, 80), Size = Ui.D(50, 50) };
+        off.Click += (_, _) => DialogResult = DialogResult.Cancel;
         Controls.Add(usb); Controls.Add(off);
         Resize += (_, _) =>
         {
-            col.Location = new Point((ClientSize.Width - col.Width) / 2, (ClientSize.Height - 300) / 2 - 20);
-            off.Location = new Point(ClientSize.Width - 70, ClientSize.Height - 70); usb.Location = new Point(24, ClientSize.Height - 40);
+            col.Location = new Point((ClientSize.Width - col.Width) / 2, Math.Max(Ui.D(20), (ClientSize.Height - col.Height) / 2 - Ui.D(10)));
+            off.Location = new Point(ClientSize.Width - Ui.D(76), ClientSize.Height - Ui.D(76)); usb.Location = new Point(Ui.D(28), ClientSize.Height - Ui.D(44));
             bg?.Dispose(); bg = null; Invalidate();
         };
         AcceptButton = go;
-        var t = new System.Windows.Forms.Timer { Interval = 1000 }; t.Tick += (_, _) => Tick(); t.Start(); Tick();
+        var t = new System.Windows.Forms.Timer { Interval = 1000 }; t.Tick += (_, _) => Tick(); t.Start();
         Shown += (_, _) => pass.Focus();
     }
     void Tick() { clock.Text = DateTime.Now.ToString("HH:mm"); date.Text = DateTime.Now.ToString("dddd, MMMM d"); }
@@ -268,6 +289,6 @@ class LoginForm : Form
     {
         bg ??= Theme.Lock(ClientSize);
         e.Graphics.DrawImage(bg, 0, 0);
-        using var b = new SolidBrush(Color.FromArgb(70, 0, 0, 0)); e.Graphics.FillRectangle(b, ClientRectangle);
+        using var b = new SolidBrush(Color.FromArgb(80, 0, 0, 0)); e.Graphics.FillRectangle(b, ClientRectangle);
     }
 }
