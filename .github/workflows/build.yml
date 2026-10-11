@@ -21,4 +21,4 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v1.0.${{ github.run_number }}" dist/Launcher.exe --title "USB Desktop 1.0.${{ github.run_number }}" --notes "One file: Launcher.exe (works on 32-bit, 64-bit and ARM Windows)"
+        run: gh release create "v1.0.${{ github.run_number }}" dist/Launcher.exe --title "USB Desktop 1.0.${{ github.run_number }}" --notes "Single Launcher.exe for 32-bit, 64-bit and ARM Windows"
