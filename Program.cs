@@ -271,7 +271,7 @@ class LoginForm : Form
         col.Controls.AddRange(new Control[] { av, name, hint, box, err }); Controls.Add(col);
 
         var usb = new Label { Text = "💾  Running from " + Path.GetPathRoot(Paths.Root), ForeColor = soft, BackColor = Color.Transparent, Font = Ui.F(10), AutoSize = true };
-        var off = new RoundButton { Text = "⏻", Font = Ui.F(14), Pill = true, BackColor = Color.FromArgb(46, 48, 80), Size = Ui.D(50, 50) };
+        var off = new RoundButton { Text = "⏻", Font = Ui.F(14), Pill = true, OnImage = true, BackColor = Color.FromArgb(46, 48, 80), Size = Ui.D(50, 50) };
         off.Click += (_, _) => DialogResult = DialogResult.Cancel;
         Controls.Add(usb); Controls.Add(off);
         Resize += (_, _) =>

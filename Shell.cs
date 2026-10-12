@@ -120,7 +120,7 @@ class DesktopForm : Form
     readonly System.Windows.Forms.Timer tm = new() { Interval = 1000 }, tt = new() { Interval = 3200 };
     public readonly List<string> Notes = new();
     readonly List<DlCard> cards = new();
-    QuickPanel quick = null!; TextBox msearch = null!; ClockWidget? wclock; Panel? wnote; DateTime lastInput = DateTime.Now; bool locking;
+    RoundButton? pwBtn; QuickPanel quick = null!; TextBox msearch = null!; ClockWidget? wclock; Panel? wnote; DateTime lastInput = DateTime.Now; bool locking;
 
     static readonly (string N, string G, Color C, string K)[] Catalog =
     {
@@ -366,9 +366,9 @@ class DesktopForm : Form
         var pm = new ContextMenuStrip();
         pm.Items.Add("🔒  Lock", null, (_, _) => { HideMenu(); Lock(); }); pm.Items.Add("⏻  Shut down", null, (_, _) => Application.Exit());
         pw.Click += (_, _) => pm.Show(pw, new Point(0, 0), ToolStripDropDownDirection.AboveLeft);
-        menu.Controls.AddRange(new Control[] { sb, pl, grid, mAv, mName, pw }); Controls.Add(menu);
+        menu.Controls.AddRange(new Control[] { sb, pl, grid, mAv, mName, pw }); pwBtn = pw; Ui.Dark(grid); Controls.Add(menu);
     }
-    void ShowMenu() { quick.Visible = false; msearch.Text = ""; menu.Location = new Point(Ui.D(10), Height - bar.Height - menu.Height - Ui.D(10)); mAv.Image = U.Avatar(Ui.D(44)); mName.Text = Cfg.Get("name", Environment.UserName); menu.Visible = true; menu.BringToFront(); }
+    void ShowMenu() { quick.Visible = false; msearch.Text = ""; menu.Height = Math.Min(Ui.D(600), Height - bar.Height - Ui.D(24)); grid.Height = menu.Height - Ui.D(190); int uy = menu.Height - Ui.D(64); mAv.Top = uy; mName.Top = uy; if (pwBtn != null) pwBtn.Top = uy; menu.Location = new Point(Ui.D(10), Height - bar.Height - menu.Height - Ui.D(10)); mAv.Image = U.Avatar(Ui.D(44)); mName.Text = Cfg.Get("name", Environment.UserName); menu.Visible = true; menu.BringToFront(); }
     void HideMenu() { menu.Visible = false; quick.Visible = false; }
     void ToggleQuick() { if (quick.Visible) { quick.Visible = false; return; } menu.Visible = false; quick.Refresh2(); quick.Location = new Point(Width - quick.Width - Ui.D(10), Height - bar.Height - quick.Height - Ui.D(10)); quick.Visible = true; quick.BringToFront(); }
     void Lock() { if (locking) return; locking = true; try { using var l = new LoginForm(); l.ShowDialog(); } finally { locking = false; lastInput = DateTime.Now; } }

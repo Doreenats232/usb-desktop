@@ -12,6 +12,8 @@ static class Ui
     public static Font F(float pt, bool bold = false) => new("Segoe UI", pt, bold ? FontStyle.Bold : FontStyle.Regular);
     public static readonly Color Bg = Color.FromArgb(14, 15, 28), Surface = Color.FromArgb(23, 24, 41), Surface2 = Color.FromArgb(34, 36, 58),
         Line = Color.FromArgb(52, 55, 86), Text = Color.FromArgb(241, 242, 250), Sub = Color.FromArgb(165, 168, 200);
+    public static Color PBg(Control c, Color fb) { var p = c.Parent; if (p is RoundPanel rp) return rp.Fill; var bc = p?.BackColor ?? fb; return bc.A < 255 ? fb : bc; }
+    public static void Dark(Control c) => DarkTheme(c);
     public static Color Accent => Theme.Accent;
     public static Color Accent2 => Theme.P[Theme.Idx].C;
     public static Color Mix(Color a, Color b, float t) => Color.FromArgb((int)(a.R + (b.R - a.R) * t), (int)(a.G + (b.G - a.G) * t), (int)(a.B + (b.B - a.B) * t));
@@ -57,7 +59,7 @@ static class Ui
         else if (k is NumericUpDown || k is ComboBox || k is ListBox) { k.BackColor = Surface2; k.ForeColor = Text; }
         else if (k is CheckBox || k is RadioButton) { k.ForeColor = Text; k.BackColor = Color.Transparent; }
         else if (k is MenuStrip ms) { ms.BackColor = Surface2; ms.ForeColor = Text; }
-        else if (k is Panel p) { if (p.BackColor.GetBrightness() > 0.85f || p.BackColor == SystemColors.Control) p.BackColor = (p.Dock == DockStyle.Top || p.Dock == DockStyle.Bottom) && p.Height < 90 ? Surface2 : Surface; }
+        else if (k is Panel p) { if (p.AutoScroll) DarkTheme(p); if (p.BackColor.GetBrightness() > 0.85f || p.BackColor == SystemColors.Control) p.BackColor = (p.Dock == DockStyle.Top || p.Dock == DockStyle.Bottom) && p.Height < 90 ? Surface2 : Surface; }
     }
 
     public static (RoundPanel box, TextBox tb) Input(string placeholder, bool pw = false, int h = 42)
@@ -72,7 +74,8 @@ static class Ui
 
 class RoundButton : Button
 {
-    bool hover, down; public int Radius = 10; public bool Pill; public Color? Hover;
+    bool hover, down; public int Radius = 10; public bool Pill, OnImage; public Color? Hover;
+    protected override void OnResize(EventArgs e) { base.OnResize(e); if (OnImage && Width > 4 && Height > 4) { using var p = U.Round(new Rectangle(0, 0, Width, Height), Pill ? Height / 2 : Ui.D(Radius)); var old = Region; Region = new Region(p); old?.Dispose(); } }
     public RoundButton()
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
@@ -86,7 +89,7 @@ class RoundButton : Button
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-        var pc = Parent?.BackColor ?? Ui.Surface; if (pc.A < 255) pc = Ui.Surface; g.Clear(pc);
+        if (!OnImage) g.Clear(Ui.PBg(this, Ui.Surface));
         var c = BackColor; if (!Enabled) c = Color.FromArgb(52, 54, 78); else if (down) c = ControlPaint.Dark(c, 0.08f); else if (hover) c = Hover ?? ControlPaint.Light(c, 0.22f);
         var r = new Rectangle(0, 0, Width - 1, Height - 1); int rad = Pill ? Height / 2 : Math.Min(Ui.D(Radius), Height / 2);
         using (var p = U.Round(r, rad)) using (var br = new SolidBrush(c)) g.FillPath(br, p);
@@ -94,10 +97,10 @@ class RoundButton : Button
         if (Image != null && TextImageRelation == TextImageRelation.ImageAboveText)
         {
             g.DrawImage(Image, (Width - Image.Width) / 2, Ui.D(8), Image.Width, Image.Height);
-            TextRenderer.DrawText(g, Text, Font, new Rectangle(2, Ui.D(8) + Image.Height + 2, Width - 4, Height - Image.Height - Ui.D(12)), fg, TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.EndEllipsis | TextFormatFlags.WordBreak);
+            TextRenderer.DrawText(g, Text, Font, new Rectangle(2, Ui.D(8) + Image.Height + 2, Width - 4, Height - Image.Height - Ui.D(12)), fg, TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.EndEllipsis | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
             return;
         }
-        var fl = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding | (TextAlign == ContentAlignment.MiddleLeft ? TextFormatFlags.Left : TextAlign == ContentAlignment.MiddleRight ? TextFormatFlags.Right : TextFormatFlags.HorizontalCenter);
+        var fl = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | (TextAlign == ContentAlignment.MiddleLeft ? TextFormatFlags.Left : TextAlign == ContentAlignment.MiddleRight ? TextFormatFlags.Right : TextFormatFlags.HorizontalCenter);
         if (Width < Ui.D(70)) fl &= ~TextFormatFlags.EndEllipsis;
         TextRenderer.DrawText(g, Text, Font, Rectangle.Inflate(r, -Math.Min(Ui.D(10), Width / 6), 0), fg, fl);
     }
@@ -115,7 +118,7 @@ class RoundPanel : Panel
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
-        if (!Floating) { var pc = Parent?.BackColor ?? Ui.Bg; if (pc.A < 255) pc = Ui.Bg; g.Clear(pc); } else g.Clear(Fill);
+        if (!Floating) g.Clear(Ui.PBg(this, Ui.Bg)); else g.Clear(Fill);
         var r = new Rectangle(0, 0, Width - 1, Height - 1);
         using var p = U.Round(r, Radius); using var br = new SolidBrush(Fill); using var pen = new Pen(Ui.Line);
         g.FillPath(br, p); g.DrawPath(pen, p);
@@ -132,7 +135,7 @@ class LineProgress : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
-        var pc = Parent?.BackColor ?? Ui.Surface; if (pc.A < 255) pc = Ui.Surface; g.Clear(pc);
+        g.Clear(Ui.PBg(this, Ui.Surface));
         if (Width < 6 || Height < 2) return;
         var tr = new Rectangle(0, 0, Width - 1, Height - 1);
         using var tp = U.Round(tr, Height / 2); using (var tb = new SolidBrush(Color.FromArgb(58, 61, 92))) g.FillPath(tb, tp);
