@@ -167,7 +167,7 @@ class DlCard : RoundPanel
     readonly System.Windows.Forms.Timer rm = new() { Interval = 5000 }; public Action? Removed; bool finished;
     public DlCard(string t, CancellationTokenSource? cts, string icon = "")
     {
-        Floating = true; Fill = Color.FromArgb(30, 32, 54); Edge = Color.FromArgb(70, 74, 120); Radius = Ui.D(16); Size = Ui.D(400, 104);
+        Floating = true; Fill = Color.FromArgb(30, 32, 54); Radius = Ui.D(16); Size = Ui.D(400, 104);
         
         title.Text = t; title.Font = Ui.F(10.5f, true); title.ForeColor = Ui.Text; title.AutoEllipsis = true; title.SetBounds(Ui.D(16), Ui.D(10), Ui.D(290), Ui.D(26));
         pct.Font = Ui.F(14, true); pct.ForeColor = Ui.Text; pct.TextAlign = ContentAlignment.MiddleRight; pct.SetBounds(Ui.D(246), Ui.D(36), Ui.D(70), Ui.D(30));
