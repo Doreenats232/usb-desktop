@@ -272,7 +272,7 @@ static class Views
                     B("⬆  Check for updates", 24, 230, 200, async () =>
                     {
                         ul.Text = "Checking...";
-                        try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { ul.Text = "Version " + u.latest + " found. Downloading..."; var card = sh.NewDl("Updating USB Desktop", null); await Updater.Apply(u.url, card.Report); } else ul.Text = "You're up to date ✅"; }
+                        try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { ul.Text = "Version 1.0." + u.latest + " found."; await Updater.Run(u.latest, u.url, true); } else ul.Text = "You're up to date ✅"; }
                         catch (Exception ex) { ul.Text = "Couldn't check: " + ex.Message; }
                     }); break;
             }

@@ -10,9 +10,18 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2739.15" />
   </ItemGroup>
+  <ItemGroup Condition="'$(NuGetPackageRoot)' != ''">
+    <EmbeddedResource Include="$(NuGetPackageRoot)microsoft.web.webview2/1.0.2739.15/runtimes/win-x86/native/WebView2Loader.dll" LogicalName="WebView2Loader.x86.dll" Condition="Exists('$(NuGetPackageRoot)microsoft.web.webview2/1.0.2739.15/runtimes/win-x86/native/WebView2Loader.dll')" />
+  </ItemGroup>
+  <Target Name="CheckLoader" BeforeTargets="CoreCompile">
+    <Error Condition="@(EmbeddedResource-&gt;WithMetadataValue('LogicalName','WebView2Loader.x86.dll')-&gt;Count()) == 0" Text="WebView2Loader.dll was not found to embed" />
+  </Target>
 </Project>

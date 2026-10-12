@@ -211,11 +211,19 @@ static class Bin
 
 static class Program
 {
+    static bool InsideArchive()
+    {
+        try { var p = Environment.ProcessPath ?? ""; return p.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) || p.Contains("Rar$", StringComparison.OrdinalIgnoreCase); }
+        catch { return false; }
+    }
     [STAThread]
     static void Main()
     {
-        foreach (var d in new[] { Paths.Desktop, Paths.Apps, Paths.Data, Paths.Vm, Paths.Bin, Paths.Shots }) Directory.CreateDirectory(d);
         ApplicationConfiguration.Initialize();
+        if (InsideArchive()) { MessageBox.Show("Launcher.exe is running from inside the zip file.\n\nRight-click the zip, choose Extract All, then open Launcher.exe from the extracted folder (or copy it onto your USB drive first).", "USB Desktop"); return; }
+        try { foreach (var d in new[] { Paths.Desktop, Paths.Apps, Paths.Data, Paths.Vm, Paths.Bin, Paths.Shots }) Directory.CreateDirectory(d); }
+        catch (Exception ex) { MessageBox.Show("This location is read-only, so USB Desktop can't set itself up here.\n\nMove Launcher.exe to a normal folder or your USB drive.\n\n" + ex.Message, "USB Desktop"); return; }
+        Native.Prepare();
         ToolStripManager.Renderer = new DarkRenderer();
         Application.ThreadException += (_, e) => Err(e.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, e) => Err((Exception)e.ExceptionObject);

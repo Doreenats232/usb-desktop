@@ -13,6 +13,7 @@ jobs:
         shell: bash
         run: |
           dotnet publish -c Release -r win-x86 -o out -p:Version=1.0.${{ github.run_number }}
+          ls -la out
           mkdir dist
           cp out/Launcher.exe dist/Launcher.exe
           cp out/Launcher.exe dist/Launcher-x86.exe

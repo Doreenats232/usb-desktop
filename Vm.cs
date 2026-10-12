@@ -20,10 +20,7 @@ static class VmApp
     }
     static async Task Dl(DesktopForm sh, string url, string dest, string title)
     {
-        var cts = new CancellationTokenSource(); var card = sh.NewDl(title, cts);
-        try { await Net.Download(url, dest, card.Report, cts.Token); card.Done("Downloaded"); }
-        catch (OperationCanceledException) { card.Fail("Cancelled"); throw; }
-        catch (Exception ex) { card.Fail(ex.Message); throw; }
+        if (!await Installer.Get(sh, url, dest, title)) throw new OperationCanceledException("Download didn't finish");
     }
 
     public static Control View(DesktopForm sh)

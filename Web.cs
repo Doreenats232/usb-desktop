@@ -93,20 +93,26 @@ input:focus{box-shadow:0 2px 12px rgba(32,33,36,.28)}
 <a class=tile href='https://www.wikipedia.org'><div class=ic>📚</div>Wikipedia</a>" + st + "</div>";
     }
 
-    static void Dl(DesktopForm sh, CoreWebView2DownloadStartingEventArgs e, string dir)
+    static void Dl(DesktopForm sh, CoreWebView2DownloadStartingEventArgs e, string dir, bool asApp)
     {
-        Directory.CreateDirectory(dir); var dest = U.Unique(dir, Path.GetFileName(e.ResultFilePath)); e.ResultFilePath = dest; e.Handled = true;
-        var card = sh.NewDl("⬇  " + Path.GetFileName(dest), null); var op = e.DownloadOperation; long last = 0, lt = 0; var sw = Stopwatch.StartNew();
-        op.BytesReceivedChanged += (_, _) =>
+        Directory.CreateDirectory(dir);
+        var nm = Path.GetFileName(e.ResultFilePath); if (string.IsNullOrWhiteSpace(nm)) nm = "download";
+        var dest = U.Unique(dir, nm); e.ResultFilePath = dest; e.Handled = true;
+        var op = e.DownloadOperation; var cts = new CancellationTokenSource(); var card = sh.NewDl(Path.GetFileName(dest), cts);
+        cts.Token.Register(() => { try { op.Cancel(); } catch { } });
+        var sw = Stopwatch.StartNew(); long lastB = 0, lastT = 0; double sp = 0; bool end = false;
+        var tm = new System.Windows.Forms.Timer { Interval = 200 };
+        tm.Tick += (_, _) =>
         {
-            long now = sw.ElapsedMilliseconds; if (now - lt < 300) return;
-            long tot = 0; try { tot = Convert.ToInt64(op.TotalBytesToReceive); } catch { }
-            card.Report(op.BytesReceived, tot > 0 ? tot : -1, (op.BytesReceived - last) * 1000.0 / Math.Max(1, now - lt)); last = op.BytesReceived; lt = now;
+            if (end) return; long got = op.BytesReceived; long tot = 0; try { tot = Convert.ToInt64(op.TotalBytesToReceive); } catch { }
+            double dt = Math.Max(0.05, (sw.ElapsedMilliseconds - lastT) / 1000.0); double inst = (got - lastB) / dt; sp = sp <= 0 ? inst : sp * 0.7 + inst * 0.3; lastB = got; lastT = sw.ElapsedMilliseconds;
+            card.Report(got, tot > 0 ? tot : -1, sp);
         };
-        op.StateChanged += (_, _) =>
+        tm.Start();
+        op.StateChanged += async (_, _) =>
         {
-            if (op.State == CoreWebView2DownloadState.Completed) { card.Done("Saved to " + Path.GetFileName(dir)); sh.AfterDownload(dest); }
-            else if (op.State == CoreWebView2DownloadState.Interrupted) card.Fail("Download interrupted");
+            if (op.State == CoreWebView2DownloadState.Completed) { end = true; tm.Stop(); tm.Dispose(); await Installer.Finish(sh, card, dest, asApp); }
+            else if (op.State == CoreWebView2DownloadState.Interrupted) { end = true; tm.Stop(); tm.Dispose(); card.Fail(cts.IsCancellationRequested ? "Cancelled" : "Download interrupted. Check your connection and try again."); }
         };
     }
 
@@ -169,7 +175,7 @@ input:focus{box-shadow:0 2px 12px rgba(32,33,36,.28)}
             {
                 await wv.EnsureCoreWebView2Async(await Env()); var c = wv.CoreWebView2;
                 c.Settings.IsPasswordAutosaveEnabled = true; c.Settings.IsGeneralAutofillEnabled = true;
-                c.DownloadStarting += (_, e) => Dl(sh, e, dlDir);
+                c.DownloadStarting += (_, e) => Dl(sh, e, dlDir, dlDir == Paths.Apps);
                 c.DocumentTitleChanged += (_, _) => { ti.Title = c.DocumentTitle; tabs.Invalidate(); };
                 c.SourceChanged += (_, _) => { if (Cur() == ti) SetAddr(c.Source); };
                 c.NavigationStarting += (_, _) => { ti.Loading = true; if (Cur() == ti) prog.Indeterminate = true; tabs.Invalidate(); };

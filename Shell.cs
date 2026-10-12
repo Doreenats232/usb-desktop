@@ -168,7 +168,7 @@ class DesktopForm : Form
         Shown += async (_, _) =>
         {
             var sp = new Splash(ClientSize); Controls.Add(sp); sp.BringToFront(); Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " 👋");
-            try { var u = await Updater.Check(); if (u.latest > Updater.Cur) Toast("⬆ Update " + u.latest + " is available. Open Settings > About."); } catch { }
+            try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { Toast("Update 1.0." + u.latest + " is available"); await Updater.Run(u.latest, u.url, true); } } catch { }
         };
     }
 
@@ -205,9 +205,9 @@ class DesktopForm : Form
     }
 
     // ---------- downloads ----------
-    public DlCard NewDl(string title, CancellationTokenSource? cts)
+    public DlCard NewDl(string title, CancellationTokenSource? cts, string icon = "")
     {
-        var c = new DlCard(title, cts); cards.Add(c); Controls.Add(c); c.Removed = () => { cards.Remove(c); LayoutCards(); }; LayoutCards(); return c;
+        var c = new DlCard(title, cts, icon); cards.Add(c); Controls.Add(c); c.Removed = () => { cards.Remove(c); LayoutCards(); }; LayoutCards(); return c;
     }
     void LayoutCards()
     {
@@ -390,13 +390,4 @@ class DesktopForm : Form
         catch { }
     }
     public void ReloadApps() { while (grid.Controls.Count > Catalog.Length) { var c = grid.Controls[grid.Controls.Count - 1]; grid.Controls.Remove(c); c.Dispose(); } AddUserApps(); }
-    public void AfterDownload(string f)
-    {
-        try
-        {
-            if (f.StartsWith(Paths.Apps) && f.EndsWith(".zip")) { System.IO.Compression.ZipFile.ExtractToDirectory(f, U.Unique(Paths.Apps, Path.GetFileNameWithoutExtension(f))); File.Delete(f); }
-            ReloadApps(); Reload(); Toast("✅ Downloaded " + Path.GetFileName(f));
-        }
-        catch (Exception ex) { Toast(ex.Message); }
-    }
 }
