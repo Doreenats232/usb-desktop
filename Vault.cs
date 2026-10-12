@@ -12,7 +12,7 @@ static class VaultApp
     {
         Directory.CreateDirectory(Dir); var sp = Path.Combine(Dir, "salt.bin");
         if (!File.Exists(sp)) File.WriteAllBytes(sp, RandomNumberGenerator.GetBytes(16));
-        return Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(pw), File.ReadAllBytes(sp), 300000, HashAlgorithmName.SHA256, 32);
+        return U.Pbkdf2(Encoding.UTF8.GetBytes(pw), File.ReadAllBytes(sp), 300000);
     }
     static byte[] Enc(byte[] plain)
     {

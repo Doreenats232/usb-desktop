@@ -151,17 +151,28 @@ static class U
         using var im = Image.FromFile(src); im.Save(dest, ImageFormat.Png); return dest;
     }
     public static string Hash(string s) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("usbdesk" + s)));
+    public static byte[] Pbkdf2(byte[] pw, byte[] salt, int iter)
+    {
+        try { return Rfc2898DeriveBytes.Pbkdf2(pw, salt, iter, HashAlgorithmName.SHA256, 32); }
+        catch (CryptographicException)
+        {
+            using var h = new HMACSHA256(pw); var s1 = new byte[salt.Length + 4]; salt.CopyTo(s1, 0); s1[^1] = 1;
+            var u = h.ComputeHash(s1); var t = (byte[])u.Clone();
+            for (int i = 1; i < iter; i++) { u = h.ComputeHash(u); for (int j = 0; j < t.Length; j++) t[j] ^= u[j]; }
+            return t;
+        }
+    }
     public static string MakeHash(string s)
     {
         var salt = RandomNumberGenerator.GetBytes(16);
-        var h = Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(s), salt, 200000, HashAlgorithmName.SHA256, 32);
+        var h = Pbkdf2(Encoding.UTF8.GetBytes(s), salt, 200000);
         return "v2:" + Convert.ToBase64String(salt) + ":" + Convert.ToBase64String(h);
     }
     public static bool Check(string s, string stored)
     {
         if (!stored.StartsWith("v2:")) return stored == Hash(s);
         var p = stored.Split(':'); if (p.Length != 3) return false;
-        var h = Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(s), Convert.FromBase64String(p[1]), 200000, HashAlgorithmName.SHA256, 32);
+        var h = Pbkdf2(Encoding.UTF8.GetBytes(s), Convert.FromBase64String(p[1]), 200000);
         return CryptographicOperations.FixedTimeEquals(h, Convert.FromBase64String(p[2]));
     }
     public static string Unique(string dir, string name)
@@ -253,7 +264,8 @@ class LoginForm : Form
 
         var (box, tb) = Ui.Input("Password", true, 50); pass = tb; box.Floating = true; box.Fill = Color.FromArgb(40, 42, 70); tb.BackColor = box.Fill; box.SetBounds(Ui.D(30), Ui.D(276), cw - Ui.D(60), Ui.D(50));
         go.Text = "→"; go.Pill = true; go.BackColor = Theme.Accent; go.Font = Ui.F(13, true); box.Controls.Add(go);
-        box.Resize += (_, _) => { go.SetBounds(box.Width - Ui.D(44), Ui.D(5), Ui.D(40), box.Height - Ui.D(10)); tb.Width = box.Width - Ui.D(18) - Ui.D(54); };
+        void Lay() { go.SetBounds(box.Width - Ui.D(44), Ui.D(5), Ui.D(40), box.Height - Ui.D(10)); tb.Width = box.Width - Ui.D(18) - Ui.D(54); }
+        box.Resize += (_, _) => Lay(); Lay();
         go.Click += (_, _) => Submit();
         err.Font = Ui.F(10); err.ForeColor = Color.FromArgb(255, 150, 150); err.BackColor = Color.Transparent; err.TextAlign = ContentAlignment.MiddleCenter; err.SetBounds(0, Ui.D(336), cw, Ui.D(30));
         col.Controls.AddRange(new Control[] { av, name, hint, box, err }); Controls.Add(col);
