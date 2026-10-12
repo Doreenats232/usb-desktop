@@ -189,15 +189,15 @@ static class Views
 
     public static Control Settings(DesktopForm sh, int start)
     {
-        var root = new Panel(); var nav = new Panel { Dock = DockStyle.Left, Width = 200, BackColor = Color.FromArgb(243, 243, 248) };
+        var root = new Panel(); var nav = new Panel { Dock = DockStyle.Left, Width = 200, BackColor = Ui.Surface2 };
         var page = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, AutoScroll = true };
         root.Controls.Add(page); root.Controls.Add(nav);
         string[] names = { "🎨  Personalization", "🖥  Display", "👤  Accounts", "🔒  Lock screen", "🛡  Security", "🛍  Store", "ℹ  About & updates" };
-        Action<int> show = _ => { };
+        var navBtns = new List<RoundButton>(); Action<int> show = _ => { };
         for (int i = 0; i < names.Length; i++)
         {
             int k = i; var b = new RoundButton { Text = names[i], Bounds = new Rectangle(8, 14 + i * 46, 184, 40), FlatStyle = FlatStyle.Flat, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Emoji", 10.5f), BackColor = nav.BackColor };
-            b.FlatAppearance.BorderSize = 0; b.Click += (_, _) => show(k); nav.Controls.Add(b);
+            b.FlatAppearance.BorderSize = 0; b.Click += (_, _) => show(k); nav.Controls.Add(b); navBtns.Add(b);
         }
         Label L(string t, int x, int y, float sz = 10, bool bold = false) { var l = new Label { Text = t, Location = new Point(x, y), AutoSize = true, Font = new Font("Segoe UI", sz, bold ? FontStyle.Bold : FontStyle.Regular) }; page.Controls.Add(l); return l; }
         Button B(string t, int x, int y, int w, Action a) { var b = new RoundButton { Text = t, Bounds = new Rectangle(x, y, w, 34), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White, Cursor = Cursors.Hand }; b.FlatAppearance.BorderSize = 0; b.Click += (_, _) => a(); page.Controls.Add(b); return b; }
@@ -206,7 +206,7 @@ static class Views
 
         show = k =>
         {
-            page.Controls.Clear();
+            page.Controls.Clear(); for (int q = 0; q < navBtns.Count; q++) navBtns[q].BackColor = q == k ? Theme.Accent : Ui.Surface2;
             switch (k)
             {
                 case 0:

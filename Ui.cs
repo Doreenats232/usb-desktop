@@ -76,8 +76,9 @@ class RoundButton : Button
     public RoundButton()
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; BackColor = Ui.Surface2; ForeColor = Ui.Text; Font = Ui.F(10); Cursor = Cursors.Hand;
+        FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; BackColor = Color.FromArgb(48, 51, 82); ForeColor = Ui.Text; Font = Ui.F(10); Cursor = Cursors.Hand;
     }
+    public override Size GetPreferredSize(Size proposedSize) { var t = TextRenderer.MeasureText(Text, Font); return new Size(t.Width + Ui.D(34), Math.Max(t.Height + Ui.D(16), Ui.D(34))); }
     protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { hover = false; down = false; Invalidate(); base.OnMouseLeave(e); }
     protected override void OnMouseDown(MouseEventArgs e) { down = true; Invalidate(); base.OnMouseDown(e); }
@@ -97,7 +98,8 @@ class RoundButton : Button
             return;
         }
         var fl = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding | (TextAlign == ContentAlignment.MiddleLeft ? TextFormatFlags.Left : TextAlign == ContentAlignment.MiddleRight ? TextFormatFlags.Right : TextFormatFlags.HorizontalCenter);
-        TextRenderer.DrawText(g, Text, Font, Rectangle.Inflate(r, -Ui.D(10), 0), fg, fl);
+        if (Width < Ui.D(70)) fl &= ~TextFormatFlags.EndEllipsis;
+        TextRenderer.DrawText(g, Text, Font, Rectangle.Inflate(r, -Math.Min(Ui.D(10), Width / 6), 0), fg, fl);
     }
 }
 
