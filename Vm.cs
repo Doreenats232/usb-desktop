@@ -22,11 +22,11 @@ static class VmApp
     public static Control View(DesktopForm sh)
     {
         var p = new Panel { BackColor = Ui.Surface }; Ui.Own(p); var pg = new PagePanel(); p.Controls.Add(pg);
-        RoundButton start = null!, stop = null!; ComboBox boot = null!;
+        RoundButton start = null!, stop = null!; ComboBox boot = null!; Label s1 = null!, s2 = null!, s3 = null!;
         RoundButton B(Control parent, string t, Func<Task> a, bool primary = true) { RoundButton? btn = null; btn = pg.Btn(parent, t, async () => { try { await a(); } catch (Exception ex) { st.Text = ex.Message; } Refresh(); }, primary); return btn; }
 
         pg.H("Full OS (Linux)"); pg.P("Runs a real Linux computer inside a window. Everything is saved on the USB.", true);
-        pg.P("1  QEMU engine", false, true, 11, 12); var s1 = pg.P("", true); var r1 = pg.Row(2);
+        pg.P("1  QEMU engine", false, true, 11, 12); s1 = pg.P("", true); var r1 = pg.Row(2);
         B(r1, "Install QEMU", async () =>
         {
             if (System.Runtime.InteropServices.RuntimeInformation.OSArchitecture != System.Runtime.InteropServices.Architecture.X64) throw new Exception("Full OS needs 64-bit Intel/AMD Windows");
@@ -36,7 +36,7 @@ static class VmApp
             try { File.Delete(inst); } catch { }
             st.Text = Exe("qemu-system-x86_64.exe") != null ? "QEMU installed" : "QEMU didn't install. Try again and press Yes on the prompt.";
         });
-        pg.P("2  Linux installer", false, true, 11, 12); var s2 = pg.P("", true); var r2 = pg.Row(2);
+        pg.P("2  Linux installer", false, true, 11, 12); s2 = pg.P("", true); var r2 = pg.Row(2);
         B(r2, "Get Alpine (70 MB)", async () =>
         {
             var url = await Latest("https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/", @"alpine-virt-\d+\.\d+\.\d+-x86_64\.iso(?![\w.])");
@@ -47,7 +47,7 @@ static class VmApp
             var url = await Latest("https://cdimage.debian.org/debian-cd/current-live/amd64/iso-hybrid/", @"debian-live-\d+\.\d+\.\d+-amd64-xfce\.iso(?![\w.])");
             if (await Dl(sh, url, Path.Combine(Paths.Vm, Path.GetFileName(url)), "Debian Linux")) st.Text = "Debian downloaded";
         }, false);
-        pg.P("3  Virtual disk", false, true, 11, 12); var s3 = pg.P("", true); var r3 = pg.Row(2);
+        pg.P("3  Virtual disk", false, true, 11, 12); s3 = pg.P("", true); var r3 = pg.Row(2);
         pg.Inline(r3, "Size (GB)"); var gb = pg.Num(r3, 4, 128, Cfg.Int("vm_gb", 16), 4);
         B(r3, "Create disk", async () =>
         {
