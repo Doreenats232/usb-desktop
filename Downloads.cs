@@ -7,7 +7,8 @@ static class Installer
 {
     public static string IconKey(string name)
     {
-        return "";
+        var e = Path.GetExtension(name).ToLowerInvariant();
+        return e switch { ".zip" or ".rar" or ".7z" => "zip", ".exe" or ".msi" => "exe", ".png" or ".jpg" or ".jpeg" => "photo", ".mp3" or ".wav" => "music", ".mp4" or ".mkv" => "video", ".apk" => "store", _ => "folder" };
     }
 
     static bool LooksLikeWebPage(string f)
@@ -89,13 +90,14 @@ static class Installer
 class UpdateDialog : Form
 {
     readonly Label title = new(), ver = new(), pct = new(), detail = new(); readonly LineProgress bar = new();
-    readonly RoundButton go = new(), later = new();
+    readonly RoundButton go = new(), later = new(); readonly PictureBox ic = new();
     public bool Accepted; TaskCompletionSource<bool> choice = new();
     public UpdateDialog(int from, int to, bool ask)
     {
         FormBorderStyle = FormBorderStyle.None; StartPosition = FormStartPosition.CenterScreen; ShowInTaskbar = false; TopMost = true; BackColor = Ui.Surface; Size = Ui.D(500, 290); DoubleBuffered = true;
-        title.Text = ask ? "Update available" : "Updating USB Desktop"; title.Font = Ui.F(16, true); title.ForeColor = Ui.Text; title.BackColor = Color.Transparent; title.SetBounds(Ui.D(28), Ui.D(26), Ui.D(440), Ui.D(34));
-        ver.Text = $"Version 1.0.{from}  →  1.0.{to}"; ver.Font = Ui.F(10); ver.ForeColor = Ui.Sub; ver.BackColor = Color.Transparent; ver.SetBounds(Ui.D(30), Ui.D(62), Ui.D(440), Ui.D(26));
+        ic.SetBounds(Ui.D(28), Ui.D(26), Ui.D(64), Ui.D(64)); ic.SizeMode = PictureBoxSizeMode.Zoom; ic.Image = Icons.Scaled(Icons.App("vm"), Ui.D(64)); ic.BackColor = Color.Transparent;
+        title.Text = ask ? "Update available" : "Updating USB Desktop"; title.Font = Ui.F(16, true); title.ForeColor = Ui.Text; title.BackColor = Color.Transparent; title.SetBounds(Ui.D(108), Ui.D(26), Ui.D(370), Ui.D(34));
+        ver.Text = $"Version 1.0.{from}  →  1.0.{to}"; ver.Font = Ui.F(10); ver.ForeColor = Ui.Sub; ver.BackColor = Color.Transparent; ver.SetBounds(Ui.D(110), Ui.D(62), Ui.D(370), Ui.D(26));
         pct.Font = Ui.F(30, true); pct.ForeColor = Ui.Text; pct.BackColor = Color.Transparent; pct.TextAlign = ContentAlignment.MiddleLeft; pct.SetBounds(Ui.D(28), Ui.D(112), Ui.D(200), Ui.D(56));
         detail.Font = Ui.F(9.5f); detail.ForeColor = Ui.Sub; detail.BackColor = Color.Transparent; detail.TextAlign = ContentAlignment.MiddleRight; detail.AutoEllipsis = true; detail.SetBounds(Ui.D(200), Ui.D(122), Ui.D(272), Ui.D(40));
         bar.SetBounds(Ui.D(28), Ui.D(176), Ui.D(444), Ui.D(10)); bar.Height = Ui.D(10);
@@ -104,7 +106,7 @@ class UpdateDialog : Form
         go.Click += (_, _) => { Accepted = true; choice.TrySetResult(true); }; later.Click += (_, _) => { choice.TrySetResult(false); Close(); };
         if (ask) { pct.Text = ""; detail.Text = "A newer version is ready. It only takes a minute and your files stay on the USB."; detail.TextAlign = ContentAlignment.TopLeft; detail.SetBounds(Ui.D(28), Ui.D(112), Ui.D(444), Ui.D(56)); bar.Visible = false; }
         else { go.Visible = later.Visible = false; bar.Indeterminate = true; pct.Text = "0%"; detail.Text = "Connecting…"; }
-        Controls.AddRange(new Control[] { title, ver, pct, detail, bar, go, later });
+        Controls.AddRange(new Control[] { ic, title, ver, pct, detail, bar, go, later });
         Resize += (_, _) => { using var p = U.Round(new Rectangle(0, 0, Width, Height), Ui.D(20)); var old = Region; Region = new Region(p); old?.Dispose(); };
         Paint += (_, e) => { e.Graphics.SmoothingMode = SmoothingMode.AntiAlias; using var lg = new LinearGradientBrush(new Rectangle(0, 0, Width, Ui.D(4)), Ui.Accent, Ui.Accent2, 0f); e.Graphics.FillRectangle(lg, 0, 0, Width, Ui.D(4)); using var pn = new Pen(Ui.Line); e.Graphics.DrawRectangle(pn, 0, 0, Width - 1, Height - 1); };
     }

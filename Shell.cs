@@ -10,7 +10,7 @@ class Surface : Panel
     {
         var g = e.Graphics; if (Bg != null) g.DrawImage(Bg, 0, 0); else g.Clear(Ui.Bg);
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        foreach (var w in Controls.OfType<Win>().Where(x => x.Visible))
+        foreach (var w in Controls.OfType<Win>().Where(x => x.Visible && !x.IsMax))
             for (int i = 8; i >= 1; i--)
             {
                 var r = Rectangle.Inflate(w.Bounds, i * Ui.D(2), i * Ui.D(2)); r.Offset(0, Ui.D(6));
@@ -23,20 +23,23 @@ class DeskIcon : Control
 {
     public string Label; public Image Img; public string? FilePath; public Action Act; public bool Sel; public int Sz;
     public Action<DeskIcon>? Picked, Dropped;
-    Point dn, st; bool down, moved;
+    Point dn, st; bool down, moved, hover;
     public DeskIcon(string label, Image img, Action act, int sz)
     {
         SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
         BackColor = Color.Transparent; Label = label; Img = img; Act = act; Sz = sz; Font = Ui.F(9f);
     }
+    protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
     protected override void OnPaint(PaintEventArgs e)
     {
-        var g = e.Graphics; g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.SmoothingMode = SmoothingMode.AntiAlias;
-        if (Sel) { using var b = new SolidBrush(Color.FromArgb(70, 255, 255, 255)); using var p = U.Round(new Rectangle(1, 1, Width - 3, Height - 3), Ui.D(10)); g.FillPath(b, p); }
-        g.DrawImage(Img, (Width - Sz) / 2, Ui.D(8), Sz, Sz);
-        var fl = TextFormatFlags.HorizontalCenter | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.Top;
-        TextRenderer.DrawText(g, Label, Font, new Rectangle(3, Sz + Ui.D(14), Width - 4, Height - Sz - Ui.D(14)), Color.FromArgb(160, 0, 0, 0), fl);
-        TextRenderer.DrawText(g, Label, Font, new Rectangle(2, Sz + Ui.D(13), Width - 4, Height - Sz - Ui.D(14)), Color.White, fl);
+        var g = e.Graphics; g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.SmoothingMode = SmoothingMode.AntiAlias; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        if (Sel || hover) { using var b = new SolidBrush(Color.FromArgb(Sel ? 80 : 38, 255, 255, 255)); using var p = U.Round(new Rectangle(1, 1, Width - 3, Height - 3), Ui.D(10)); g.FillPath(b, p); if (Sel) { using var pn = new Pen(Color.FromArgb(90, 255, 255, 255)); g.DrawPath(pn, p); } }
+        g.DrawImage(Img, new Rectangle((Width - Sz) / 2, Ui.D(8), Sz, Sz));
+        var fl = TextFormatFlags.HorizontalCenter | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.Top | TextFormatFlags.NoPrefix;
+        var tr = new Rectangle(Ui.D(3), Sz + Ui.D(13), Width - Ui.D(6), Height - Sz - Ui.D(14));
+        TextRenderer.DrawText(g, Label, Font, new Rectangle(tr.X + 1, tr.Y + 1, tr.Width, tr.Height), Color.FromArgb(170, 0, 0, 0), fl);
+        TextRenderer.DrawText(g, Label, Font, tr, Color.White, fl);
     }
     protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); Picked?.Invoke(this); if (e.Button == MouseButtons.Left) { down = true; moved = false; dn = Cursor.Position; st = Location; } }
     protected override void OnMouseMove(MouseEventArgs e)
@@ -54,30 +57,33 @@ class Win : Panel
     public readonly string Title;
     public Action<Win>? Closed, Minned, Raised;
     readonly Panel bar = new(), grip = new();
-    readonly Label tl = new();
+    readonly Label tl = new(); readonly PictureBox ico = new();
     readonly RoundButton cl, mx, mn;
     bool max, drag, rs, snapped; Point dn, st, rdn; Size rsz; Rectangle rest, last;
+    public bool IsMax => max;
 
-    RoundButton Tb(string t, Color hover) => new() { Text = t, BackColor = bar.BackColor, Hover = hover, Font = Ui.F(10), Radius = 8 };
-    public Win(string title, string glyph, Control content, Size sz)
+    RoundButton Tb(string glyph, Color hover) => new() { Glyph = glyph, BackColor = bar.BackColor, Hover = hover, Radius = 8, GlyphScale = 0.34f };
+    public Win(string title, string icon, Control content, Size sz)
     {
         Title = title; Size = sz; Padding = new Padding(1); BackColor = Ui.Line; DoubleBuffered = true;
         bar.Dock = DockStyle.Top; bar.Height = Ui.D(40); bar.BackColor = Color.FromArgb(20, 21, 38);
         bar.Paint += (_, e) => { using var lg = new LinearGradientBrush(new Rectangle(0, 0, Math.Max(2, bar.Width), Ui.D(3)), Ui.Accent, Ui.Accent2, 0f); e.Graphics.FillRectangle(lg, 0, 0, bar.Width, Ui.D(3)); };
-        tl.Text = "  " + glyph + "  " + title; tl.ForeColor = Ui.Text; tl.Font = Ui.F(10); tl.TextAlign = ContentAlignment.MiddleLeft; tl.BackColor = Color.Transparent;
-        cl = Tb("✕", Color.FromArgb(220, 60, 60)); mx = Tb("▢", Color.FromArgb(56, 60, 96)); mn = Tb("—", Color.FromArgb(56, 60, 96));
-        bar.Controls.Add(tl); bar.Controls.Add(cl); bar.Controls.Add(mx); bar.Controls.Add(mn);
+        ico.Image = Icons.Scaled(Icons.App(icon), Ui.D(24)); ico.SizeMode = PictureBoxSizeMode.Zoom; ico.BackColor = Color.Transparent;
+        tl.Text = title; tl.ForeColor = Ui.Text; tl.Font = Ui.F(10); tl.TextAlign = ContentAlignment.MiddleLeft; tl.BackColor = Color.Transparent; tl.AutoEllipsis = true; tl.UseMnemonic = false;
+        cl = Tb("close", Color.FromArgb(220, 60, 60)); mx = Tb("max", Color.FromArgb(56, 60, 96)); mn = Tb("min", Color.FromArgb(56, 60, 96));
+        bar.Controls.Add(ico); bar.Controls.Add(tl); bar.Controls.Add(cl); bar.Controls.Add(mx); bar.Controls.Add(mn);
         bar.Resize += (_, _) =>
         {
             int bw = Ui.D(46), bh = Math.Max(4, bar.Height - Ui.D(10));
-            tl.SetBounds(0, Ui.D(3), Math.Max(10, bar.Width - bw * 3), bar.Height - Ui.D(3));
+            ico.SetBounds(Ui.D(12), (bar.Height - Ui.D(24)) / 2 + Ui.D(1), Ui.D(24), Ui.D(24));
+            tl.SetBounds(Ui.D(44), Ui.D(3), Math.Max(10, bar.Width - bw * 3 - Ui.D(48)), bar.Height - Ui.D(3));
             cl.SetBounds(bar.Width - bw, Ui.D(6), bw - Ui.D(4), bh); mx.SetBounds(bar.Width - bw * 2, Ui.D(6), bw - Ui.D(4), bh); mn.SetBounds(bar.Width - bw * 3, Ui.D(6), bw - Ui.D(4), bh);
         };
         content.Dock = DockStyle.Fill; Controls.Add(content); Controls.Add(bar);
         grip.Size = Ui.D(20, 20); grip.Cursor = Cursors.SizeNWSE; grip.BackColor = Color.Transparent; Controls.Add(grip); grip.BringToFront();
         Resize += (_, _) => grip.Location = new Point(Width - Ui.D(22), Height - Ui.D(22));
         cl.Click += (_, _) => Closed?.Invoke(this); mn.Click += (_, _) => Minned?.Invoke(this); mx.Click += (_, _) => Toggle();
-        foreach (Control c in new Control[] { bar, tl })
+        foreach (Control c in new Control[] { bar, tl, ico })
         {
             c.MouseDown += (_, e) => { Raise(); if (max || e.Button != MouseButtons.Left) return; if (snapped) { Size = rest.Size; snapped = false; } drag = true; dn = Cursor.Position; st = Location; };
             c.MouseMove += (_, _) => { if (drag) { var d = Cursor.Position; Location = new Point(st.X + d.X - dn.X, Math.Max(0, st.Y + d.Y - dn.Y)); } };
@@ -95,16 +101,22 @@ class Win : Panel
     }
     void Hook(Control c) { c.MouseDown += (_, _) => Raise(); foreach (Control k in c.Controls) Hook(k); }
     public void Raise() { BringToFront(); Raised?.Invoke(this); }
-    void SnapTo(int side) { if (!snapped && !max) rest = Bounds; snapped = true; max = false; Bounds = new Rectangle(side == 0 ? 0 : Parent!.Width / 2, 0, Parent!.Width / 2, Parent.Height); grip.BringToFront(); }
+    void SnapTo(int side) { if (!snapped && !max) rest = Bounds; snapped = true; max = false; mx.Glyph = "max"; Bounds = new Rectangle(side == 0 ? 0 : Parent!.Width / 2, 0, Parent!.Width / 2, Parent.Height); grip.BringToFront(); }
     public void Toggle()
     {
         if (Parent == null) return;
-        if (!max) { if (!snapped) rest = Bounds; snapped = false; Bounds = new Rectangle(0, 0, Parent.Width, Parent.Height); max = true; } else { Bounds = rest; max = false; }
-        grip.BringToFront();
+        if (!max) { if (!snapped) rest = Bounds; snapped = false; Bounds = new Rectangle(0, 0, Parent.Width, Parent.Height); max = true; mx.Glyph = "restore"; } else { Bounds = rest; max = false; mx.Glyph = "max"; }
+        mx.Invalidate(); grip.BringToFront(); Corners();
+    }
+    void Corners()
+    {
+        if (Width < 20 || Height < 20) return; var old = Region;
+        if (max || snapped) Region = null; else { using var p = U.Round(new Rectangle(0, 0, Width, Height), Ui.D(10)); Region = new Region(p); }
+        old?.Dispose();
     }
     void Shadow() { if (Parent == null) return; if (last.IsEmpty) last = Bounds; Parent.Invalidate(Rectangle.Inflate(Rectangle.Union(last, Bounds), Ui.D(26), Ui.D(32))); last = Bounds; }
     protected override void OnLocationChanged(EventArgs e) { base.OnLocationChanged(e); Shadow(); }
-    protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); Shadow(); }
+    protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); Shadow(); Corners(); }
 }
 
 class DesktopForm : Form
@@ -112,7 +124,7 @@ class DesktopForm : Form
     public readonly Surface desk = new();
     readonly Panel bar = new();
     readonly RoundPanel menu = new() { Floating = true }, toast = new() { Floating = true };
-    readonly Label clock = new(), tray = new(), toastLb = new(), mName = new();
+    readonly Label clock = new(), toastLb = new(), mName = new(); readonly TrayStrip tray = new();
     readonly RoundButton startBtn = new(), shotBtn = new(), showBtn = new(), searchBtn = new();
     readonly List<(Win w, RoundButton b)> wins = new();
     readonly FlowLayoutPanel grid = new();
@@ -122,16 +134,12 @@ class DesktopForm : Form
     readonly List<DlCard> cards = new();
     RoundButton? pwBtn; QuickPanel quick = null!; TextBox msearch = null!; ClockWidget? wclock; Panel? wnote; DateTime lastInput = DateTime.Now; bool locking;
 
-    static readonly (string N, string G, Color C, string K)[] Catalog =
+    static readonly (string N, string K)[] Catalog =
     {
-        ("Files", "📁", Color.FromArgb(245,158,11), "files"), ("Full OS", "🖥", Color.FromArgb(99,102,241), "vm"),
-        ("Notepad", "📝", Color.FromArgb(59,130,246), "notepad"), ("Calculator", "🧮", Color.FromArgb(16,185,129), "calc"),
-        ("Paint", "🎨", Color.FromArgb(236,72,153), "paint"), ("Terminal", "⌨", Color.FromArgb(71,85,105), "term"),
-        ("Settings", "⚙", Color.FromArgb(100,116,139), "settings"), ("Browser", "🌐", Color.FromArgb(37,99,235), "web"),
-        ("Screenshot", "📷", Color.FromArgb(139,92,246), "shot"), ("Recycle Bin", "🗑", Color.FromArgb(120,130,150), "bin"),
-        ("MLD Store", "🛍", Color.FromArgb(244,63,94), "store"), ("Task Manager", "📊", Color.FromArgb(20,184,166), "tm"),
-        ("Vault", "🔐", Color.FromArgb(79,70,229), "vault"),
+        ("Files", "files"), ("Full OS", "vm"), ("Notepad", "notepad"), ("Calculator", "calc"), ("Paint", "paint"), ("Terminal", "term"), ("Settings", "settings"),
+        ("Browser", "web"), ("Screenshot", "shot"), ("Recycle Bin", "bin"), ("MLD Store", "store"), ("Task Manager", "tm"), ("Vault", "vault"),
     };
+    public static string IconKey(string k) => k switch { "files" => "folder", "web" => "browser", _ => k };
     static readonly string[] OnDesk = { "files", "web", "store", "vm", "vault", "bin", "settings", "notepad", "calc", "paint", "term" };
 
     public DesktopForm()
@@ -139,16 +147,16 @@ class DesktopForm : Form
         FormBorderStyle = FormBorderStyle.None; WindowState = FormWindowState.Maximized; Text = "USB Desktop"; KeyPreview = true; BackColor = Ui.Bg;
         bar.Dock = DockStyle.Bottom; bar.Height = Ui.D(56); bar.BackColor = Ui.Surface;
         bar.Paint += (_, e) => { using var p = new Pen(Ui.Line); e.Graphics.DrawLine(p, 0, 0, bar.Width, 0); };
-        startBtn.Text = "⊞"; startBtn.Font = Ui.F(16); startBtn.Pill = true; startBtn.BackColor = Theme.Accent;
-        searchBtn.Text = "🔍  Search"; searchBtn.TextAlign = ContentAlignment.MiddleLeft; searchBtn.Pill = true; searchBtn.ForeColor = Ui.Sub;
-        shotBtn.Text = "📷"; shotBtn.Pill = true; shotBtn.Font = Ui.F(12); showBtn.BackColor = Ui.Surface; showBtn.Hover = Ui.Line; showBtn.Radius = 2;
+        startBtn.Glyph = "start"; startBtn.GlyphScale = 0.42f; startBtn.Pill = true; startBtn.BackColor = Theme.Accent;
+        searchBtn.Text = "Search"; searchBtn.Glyph = "search"; searchBtn.TextAlign = ContentAlignment.MiddleLeft; searchBtn.Pill = true; searchBtn.ForeColor = Ui.Sub;
+        shotBtn.Glyph = "camera"; shotBtn.GlyphScale = 0.44f; shotBtn.Pill = true; showBtn.BackColor = Ui.Surface; showBtn.Hover = Ui.Line; showBtn.Radius = 2;
         startBtn.Click += (_, _) => { if (menu.Visible) HideMenu(); else ShowMenu(); };
         searchBtn.Click += (_, _) => { ShowMenu(); msearch.Focus(); };
         shotBtn.Click += (_, _) => Shot(); showBtn.Click += (_, _) => { foreach (var x in wins) x.w.Visible = false; Sync(); };
-        tray.ForeColor = Ui.Text; tray.Font = Ui.F(10); tray.TextAlign = ContentAlignment.MiddleCenter; tray.BackColor = Color.Transparent;
+        tray.BackColor = Ui.Surface;
         clock.ForeColor = Ui.Text; clock.Font = Ui.F(9.5f); clock.TextAlign = ContentAlignment.MiddleCenter; clock.BackColor = Color.Transparent;
         bar.Controls.AddRange(new Control[] { startBtn, searchBtn, shotBtn, showBtn, tray, clock }); bar.Resize += (_, _) => LayoutBar();
-        var bm = new ContextMenuStrip(); bm.Items.Add("📊  Task Manager", null, (_, _) => Launch("tm")); bm.Items.Add("⚙  Settings", null, (_, _) => Launch("settings")); bar.ContextMenuStrip = bm;
+        var bm = new ContextMenuStrip(); bm.Items.Add("Task Manager", null, (_, _) => Launch("tm")); bm.Items.Add("Settings", null, (_, _) => Launch("settings")); bar.ContextMenuStrip = bm;
         desk.Dock = DockStyle.Fill; Controls.Add(desk); Controls.Add(bar);
 
         toast.Size = Ui.D(360, 70); toast.Fill = Ui.Surface2; toast.Radius = Ui.D(14); toast.Visible = false;
@@ -156,7 +164,7 @@ class DesktopForm : Form
         toast.Controls.Add(toastLb); Controls.Add(toast); tt.Tick += (_, _) => { tt.Stop(); toast.Visible = false; };
 
         BuildMenu(); BuildDeskMenu();
-        quick = new QuickPanel(this); Ui.Fit(quick); quick.Size = Ui.D(quick.Width, quick.Height); quick.Radius = Ui.D(16); Controls.Add(quick);
+        quick = new QuickPanel(this); Controls.Add(quick);
         tray.Click += (_, _) => ToggleQuick(); clock.Click += (_, _) => ToggleQuick(); tray.Cursor = Cursors.Hand; clock.Cursor = Cursors.Hand;
         Application.AddMessageFilter(new IdleFilter(() => lastInput = DateTime.Now));
         desk.MouseDown += (_, _) => { HideMenu(); foreach (var i in desk.Controls.OfType<DeskIcon>()) { i.Sel = false; i.Invalidate(); } };
@@ -167,7 +175,7 @@ class DesktopForm : Form
         Load += (_, _) => { ApplyLook(); ApplyWidgets(); LayoutBar(); Tick(); };
         Shown += async (_, _) =>
         {
-            var sp = new Splash(ClientSize); Controls.Add(sp); sp.BringToFront(); Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " 👋");
+            var sp = new Splash(ClientSize); Controls.Add(sp); sp.BringToFront(); Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " ");
             try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { Toast("Update 1.0." + u.latest + " is available"); await Updater.Run(u.latest, u.url, true); } } catch { }
         };
     }
@@ -180,7 +188,7 @@ class DesktopForm : Form
         if (Cfg.Get("usbwatch", "1") == "1" && !Directory.Exists(Paths.Root)) Application.Exit();
         clock.Text = DateTime.Now.ToString(h24 ? "HH:mm" : "h:mm tt") + "\n" + DateTime.Now.ToString("dd/MM/yyyy");
         var ps = SystemInformation.PowerStatus;
-        tray.Text = "📶  🔊" + (ps.BatteryChargeStatus != BatteryChargeStatus.NoSystemBattery && ps.BatteryLifePercent <= 1 ? "  🔋" + (int)(ps.BatteryLifePercent * 100) + "%" : "");
+        tray.Battery = ps.BatteryChargeStatus != BatteryChargeStatus.NoSystemBattery && ps.BatteryLifePercent <= 1 ? (int)(ps.BatteryLifePercent * 100) : -1;
     }
 
     void LayoutBar()
@@ -205,7 +213,7 @@ class DesktopForm : Form
     }
 
     // ---------- downloads ----------
-    public DlCard NewDl(string title, CancellationTokenSource? cts, string icon = "")
+    public DlCard NewDl(string title, CancellationTokenSource? cts, string icon = "store")
     {
         var c = new DlCard(title, cts, icon); cards.Add(c); Controls.Add(c); c.Removed = () => { cards.Remove(c); LayoutCards(); }; LayoutCards(); return c;
     }
@@ -222,7 +230,7 @@ class DesktopForm : Form
         using var bm = new Bitmap(r.Width, r.Height);
         using (var g = Graphics.FromImage(bm)) g.CopyFromScreen(r.Location, Point.Empty, r.Size);
         var f = Path.Combine(Paths.Shots, "Screenshot_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".png");
-        bm.Save(f, ImageFormat.Png); Reload(); Toast("📷 Screenshot saved in Desktop\\Screenshots");
+        bm.Save(f, ImageFormat.Png); Reload(); Toast("Screenshot saved in Desktop\\Screenshots");
     }
 
     // ---------- desktop icons ----------
@@ -246,7 +254,7 @@ class DesktopForm : Form
         if (Cfg.Get("icons", "1") == "0") return;
         int sz = Ui.D(Cfg.Int("icon", 56)), cw = sz + Ui.D(46), ch = sz + Ui.D(52);
         var list = new List<DeskIcon>();
-        foreach (var k in OnDesk) { var a = Catalog.First(x => x.K == k); var key = k; list.Add(MakeIcon(k == "files" ? "This PC" : a.N, U.Tile(a.G, a.C), () => Launch(key), null)); }
+        foreach (var k in OnDesk) { var a = Catalog.First(x => x.K == k); var key = k; list.Add(MakeIcon(k == "files" ? "This PC" : a.N, Icons.App(IconKey(k)), () => Launch(key), null)); }
         foreach (var e in Directory.GetFileSystemEntries(Paths.Desktop).OrderByDescending(Directory.Exists).ThenBy(x => x)) { var p = e; list.Add(MakeIcon(Path.GetFileName(p), U.IconFor(p), () => OpenFile(p), p)); }
         int rows = Math.Max(1, (desk.Height - Ui.D(10)) / ch), n = 0;
         foreach (var ic in list)
@@ -283,23 +291,23 @@ class DesktopForm : Form
     {
         var cm = new ContextMenuStrip(); var view = new ToolStripMenuItem("View");
         foreach (var (n, v) in new[] { ("Small icons", 44), ("Medium icons", 56), ("Large icons", 72) }) { var vv = v; view.DropDownItems.Add(n, null, (_, _) => { Cfg.Set("icon", vv.ToString()); Reload(); }); }
-        var nw = new ToolStripMenuItem("New"); nw.DropDownItems.Add("📁  Folder", null, (_, _) => NewItem(true)); nw.DropDownItems.Add("📝  Text document", null, (_, _) => NewItem(false));
+        var nw = new ToolStripMenuItem("New"); nw.DropDownItems.Add("Folder", null, (_, _) => NewItem(true)); nw.DropDownItems.Add("Text document", null, (_, _) => NewItem(false));
         cm.Items.Add(view); cm.Items.Add(nw); cm.Items.Add("Refresh", null, (_, _) => Reload()); cm.Items.Add(new ToolStripSeparator());
-        cm.Items.Add("📷  Take screenshot", null, (_, _) => Shot()); cm.Items.Add("🖥  Display settings", null, (_, _) => Launch("settings", "1")); cm.Items.Add("🎨  Personalize", null, (_, _) => Launch("settings", "0"));
+        cm.Items.Add("Take screenshot", null, (_, _) => Shot()); cm.Items.Add("Display settings", null, (_, _) => Launch("settings", "1")); cm.Items.Add("Personalize", null, (_, _) => Launch("settings", "0"));
         desk.ContextMenuStrip = cm;
     }
 
     // ---------- windows ----------
     Win? FrontWin() => desk.Controls.OfType<Win>().FirstOrDefault(x => x.Visible);
-    void Sync() { var t = FrontWin(); foreach (var (w, b) in wins) b.BackColor = w.Visible && w == t ? Theme.Accent : Ui.Surface2; }
+    void Sync() { var t = FrontWin(); foreach (var (w, b) in wins) { bool act = w.Visible && w == t; b.BackColor = act ? Color.FromArgb(48, 52, 88) : Ui.Surface; b.Underline = w.Visible ? (act ? Theme.Accent : Color.FromArgb(120, 124, 170)) : null; b.Invalidate(); } }
 
-    public Win AddWin(string title, string glyph, Control view, Size sz)
+    public Win AddWin(string title, string icon, Control view, Size sz)
     {
         Ui.Skin(view); Ui.Fit(view);
         sz = new Size(Math.Min(Ui.D(sz.Width), desk.Width - Ui.D(40)), Math.Min(Ui.D(sz.Height), desk.Height - Ui.D(40)));
-        var w = new Win(title, glyph, view, sz); int k = wins.Count % 6 * Ui.D(28); w.Location = new Point(Ui.D(110) + k, Ui.D(30) + k);
+        var w = new Win(title, icon, view, sz); int k = wins.Count % 6 * Ui.D(28); w.Location = new Point(Ui.D(110) + k, Ui.D(30) + k);
         desk.Controls.Add(w); w.BringToFront();
-        var b = new RoundButton { Text = glyph + "  " + title, TextAlign = ContentAlignment.MiddleLeft, Font = Ui.F(9.5f) };
+        var b = new RoundButton { Text = title, Ico = Icons.App(icon), TextAlign = ContentAlignment.MiddleLeft, Font = Ui.F(9.5f), BackColor = Ui.Surface };
         wins.Add((w, b)); bar.Controls.Add(b);
         b.Click += (_, _) => { var t = FrontWin(); if (!w.Visible) { w.Visible = true; w.BringToFront(); } else if (t == w) w.Visible = false; else w.BringToFront(); Sync(); desk.Invalidate(); };
         w.Closed = _ => BeginInvoke(new Action(() => { bar.Controls.Remove(b); b.Dispose(); wins.RemoveAll(x => x.w == w); desk.Controls.Remove(w); w.Dispose(); LayoutBar(); Sync(); desk.Invalidate(); }));
@@ -321,15 +329,15 @@ class DesktopForm : Form
         HideMenu();
         switch (k)
         {
-            case "files": AddWin("Files", "📁", Views.Files(this, arg ?? Paths.Root), new Size(800, 520)); break;
-            case "notepad": AddWin(arg == null ? "Notepad" : Path.GetFileName(arg), "📝", Views.Notepad(this, arg), new Size(680, 460)); break;
-            case "calc": AddWin("Calculator", "🧮", Views.Calc(), new Size(330, 490)); break;
-            case "paint": AddWin("Paint", "🎨", Views.PaintApp(this), new Size(860, 580)); break;
-            case "term": AddWin("Terminal", "⌨", Views.Term(), new Size(720, 440)); break;
-            case "web": AddWin("Browser", "🌐", Web.Browser(this, arg), new Size(1040, 660)); break;
-            case "store": AddWin("MLD Store", "🛍", Web.Store(this), new Size(1040, 660)); break;
-            case "tm": AddWin("Task Manager", "📊", Tools.TaskMgr(this), new Size(640, 480)); break;
-            case "photo": if (arg != null) AddWin(Path.GetFileName(arg), "🖼", Tools.Photo(arg), new Size(780, 560)); break;
+            case "files": AddWin("Files", "folder", Views.Files(this, arg ?? Paths.Root), new Size(800, 520)); break;
+            case "notepad": AddWin(arg == null ? "Notepad" : Path.GetFileName(arg), "notepad", Views.Notepad(this, arg), new Size(680, 460)); break;
+            case "calc": AddWin("Calculator", "calc", Views.Calc(), new Size(330, 490)); break;
+            case "paint": AddWin("Paint", "paint", Views.PaintApp(this), new Size(860, 580)); break;
+            case "term": AddWin("Terminal", "term", Views.Term(), new Size(720, 440)); break;
+            case "web": AddWin("Browser", "browser", Web.Browser(this, arg), new Size(1040, 660)); break;
+            case "store": AddWin("MLD Store", "store", Web.Store(this), new Size(1040, 660)); break;
+            case "tm": AddWin("Task Manager", "tm", Tools.TaskMgr(this), new Size(640, 480)); break;
+            case "photo": if (arg != null) AddWin(Path.GetFileName(arg), "photo", Tools.Photo(arg), new Size(780, 560)); break;
             case "shot": Shot(); break;
             case "bin":
             case "vault":
@@ -337,10 +345,10 @@ class DesktopForm : Form
             case "settings":
                 var title = k == "bin" ? "Recycle Bin" : k == "vm" ? "Full OS" : k == "vault" ? "Private Vault" : "Settings"; var ex = wins.FirstOrDefault(x => x.w.Title == title).w;
                 if (ex != null) { ex.Visible = true; ex.BringToFront(); Sync(); }
-                else if (k == "bin") AddWin(title, "🗑", Views.BinView(this), new Size(640, 440));
-                else if (k == "vault") AddWin(title, "🔐", VaultApp.View(this), new Size(700, 480));
-                else if (k == "vm") AddWin(title, "🖥", VmApp.View(this), new Size(760, 580));
-                else AddWin(title, "⚙", Views.Settings(this, int.TryParse(arg, out var pg) ? pg : 0), new Size(940, 640));
+                else if (k == "bin") AddWin(title, "bin", Views.BinView(this), new Size(640, 440));
+                else if (k == "vault") AddWin(title, "vault", VaultApp.View(this), new Size(700, 480));
+                else if (k == "vm") AddWin(title, "vm", VmApp.View(this), new Size(760, 580));
+                else AddWin(title, "settings", Views.Settings(this, int.TryParse(arg, out var pg) ? pg : 0), new Size(940, 640));
                 break;
         }
     }
@@ -348,7 +356,7 @@ class DesktopForm : Form
     // ---------- start menu ----------
     RoundButton AppBtn(string name, Image img, Action act)
     {
-        var b = new RoundButton { Text = name, Image = new Bitmap(img, Ui.D(48), Ui.D(48)), TextImageRelation = TextImageRelation.ImageAboveText, Size = Ui.D(96, 104), BackColor = Ui.Surface, Font = Ui.F(8.5f), Margin = new Padding(Ui.D(2)) };
+        var b = new RoundButton { Text = name, Image = Icons.Scaled(img, Ui.D(48)), TextImageRelation = TextImageRelation.ImageAboveText, Size = Ui.D(96, 104), BackColor = Ui.Surface, Font = Ui.F(8.5f), Margin = new Padding(Ui.D(2)) };
         b.Click += (_, _) => act(); return b;
     }
     void BuildMenu()
@@ -357,14 +365,14 @@ class DesktopForm : Form
         var (sb, s) = Ui.Input("Search apps, files and settings", false, 44); msearch = s; sb.SetBounds(Ui.D(20), Ui.D(20), Ui.D(404), Ui.D(44));
         var pl = new Label { Text = "Pinned", ForeColor = Ui.Sub, Font = Ui.F(10, true), Location = new Point(Ui.D(26), Ui.D(80)), AutoSize = true, BackColor = Color.Transparent };
         grid.Bounds = new Rectangle(Ui.D(14), Ui.D(108), Ui.D(420), Ui.D(410)); grid.BackColor = Ui.Surface; grid.AutoScroll = true;
-        foreach (var a in Catalog) { var key = a.K; grid.Controls.Add(AppBtn(a.N, U.Tile(a.G, a.C), () => Launch(key))); }
+        foreach (var a in Catalog) { var key = a.K; grid.Controls.Add(AppBtn(a.N, Icons.App(IconKey(key)), () => Launch(key))); }
         AddUserApps();
         s.TextChanged += (_, _) => { foreach (Control b in grid.Controls) b.Visible = b.Text.Contains(s.Text, StringComparison.OrdinalIgnoreCase); };
         mAv.Bounds = new Rectangle(Ui.D(22), Ui.D(536), Ui.D(44), Ui.D(44)); mAv.SizeMode = PictureBoxSizeMode.Zoom; mAv.BackColor = Color.Transparent;
         mName.Bounds = new Rectangle(Ui.D(76), Ui.D(536), Ui.D(250), Ui.D(44)); mName.ForeColor = Ui.Text; mName.Font = Ui.F(11); mName.TextAlign = ContentAlignment.MiddleLeft; mName.BackColor = Color.Transparent;
-        var pw = new RoundButton { Text = "⏻", Bounds = new Rectangle(Ui.D(374), Ui.D(536), Ui.D(50), Ui.D(44)), Font = Ui.F(13), Pill = true };
+        var pw = new RoundButton { Glyph = "power", GlyphScale = 0.42f, Bounds = new Rectangle(Ui.D(374), Ui.D(536), Ui.D(50), Ui.D(44)), Pill = true };
         var pm = new ContextMenuStrip();
-        pm.Items.Add("🔒  Lock", null, (_, _) => { HideMenu(); Lock(); }); pm.Items.Add("⏻  Shut down", null, (_, _) => Application.Exit());
+        pm.Items.Add("Lock", null, (_, _) => { HideMenu(); Lock(); }); pm.Items.Add("Shut down", null, (_, _) => Application.Exit());
         pw.Click += (_, _) => pm.Show(pw, new Point(0, 0), ToolStripDropDownDirection.AboveLeft);
         menu.Controls.AddRange(new Control[] { sb, pl, grid, mAv, mName, pw }); pwBtn = pw; Ui.Dark(grid); Controls.Add(menu);
     }

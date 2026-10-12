@@ -22,7 +22,7 @@ static class Views
         void Save(bool asNew)
         {
             if (asNew || cur == null) { using var d = new SaveFileDialog { InitialDirectory = Paths.Desktop, FileName = "Untitled.txt" }; if (d.ShowDialog() != DialogResult.OK) return; cur = d.FileName; }
-            File.WriteAllText(cur, tb.Text); sh.Toast("💾 Saved " + Path.GetFileName(cur)); sh.Reload();
+            File.WriteAllText(cur, tb.Text); sh.Toast("Saved " + Path.GetFileName(cur)); sh.Reload();
         }
         file.DropDownItems.Add("New", null, (_, _) => { cur = null; tb.Clear(); });
         file.DropDownItems.Add("Open…", null, (_, _) => { using var d = new OpenFileDialog { InitialDirectory = Paths.Desktop }; if (d.ShowDialog() == DialogResult.OK) { cur = d.FileName; tb.Text = File.ReadAllText(cur); } });
@@ -100,7 +100,7 @@ static class Views
         Button T(string t, Action a) { var b = new RoundButton { Text = t, AutoSize = true, Height = 28 }; b.Click += (_, _) => a(); tools.Controls.Add(b); return b; }
         T("Thinner", () => size = Math.Max(1, size - 2)); T("Thicker", () => size += 2);
         T("Clear", () => { using var g = Graphics.FromImage(bmp); g.Clear(Color.White); pb.Invalidate(); });
-        T("Save", () => { var f = U.Unique(Paths.Desktop, "Painting.png"); bmp.Save(f, System.Drawing.Imaging.ImageFormat.Png); sh.Reload(); sh.Toast("🎨 Saved " + Path.GetFileName(f)); });
+        T("Save", () => { var f = U.Unique(Paths.Desktop, "Painting.png"); bmp.Save(f, System.Drawing.Imaging.ImageFormat.Png); sh.Reload(); sh.Toast("Saved " + Path.GetFileName(f)); });
         pb.MouseDown += (_, e) => last = e.Location; pb.MouseUp += (_, _) => last = null;
         pb.MouseMove += (_, e) =>
         {
@@ -123,8 +123,8 @@ static class Views
             foreach (var d in Bin.Items()) { var o = File.Exists(d + ".orig") ? File.ReadAllText(d + ".orig") : ""; lv.Items.Add(new ListViewItem(new[] { Bin.Name(d), Path.GetDirectoryName(o) ?? "" }) { Tag = d }); }
         }
         Button B(string t, Action a) { var b = new RoundButton { Text = t, AutoSize = true, Height = 30 }; b.Click += (_, _) => a(); top.Controls.Add(b); return b; }
-        B("↩ Restore", () => { foreach (ListViewItem it in lv.SelectedItems) try { Bin.Restore((string)it.Tag!); } catch { } Fill(); sh.Reload(); });
-        B("🗑 Empty Recycle Bin", () => { if (MessageBox.Show("Delete everything permanently?", "Recycle Bin", MessageBoxButtons.YesNo) == DialogResult.Yes) { Bin.Empty(); Fill(); } });
+        B("Restore", () => { foreach (ListViewItem it in lv.SelectedItems) try { Bin.Restore((string)it.Tag!); } catch { } Fill(); sh.Reload(); });
+        B("Empty Recycle Bin", () => { if (MessageBox.Show("Delete everything permanently?", "Recycle Bin", MessageBoxButtons.YesNo) == DialogResult.Yes) { Bin.Empty(); Fill(); } });
         p.Controls.Add(lv); p.Controls.Add(top); Fill(); return p;
     }
 
@@ -132,7 +132,7 @@ static class Views
     {
         var p = new Panel(); var top = new Panel { Dock = DockStyle.Top, Height = 38, BackColor = Color.FromArgb(240, 240, 245) };
         var path = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Font = new Font("Segoe UI", 10) };
-        var up = new RoundButton { Text = "↑", Width = 40, Dock = DockStyle.Left }; var nf = new RoundButton { Text = "＋ Folder", Width = 90, Dock = DockStyle.Right }; var sb = new TextBox { Dock = DockStyle.Right, Width = 150, Font = new Font("Segoe UI", 10), PlaceholderText = "Search" };
+        var up = new RoundButton { Glyph = "up", Width = 40, Dock = DockStyle.Left }; var nf = new RoundButton { Text = "New folder", Width = 110, Dock = DockStyle.Right }; var sb = new TextBox { Dock = DockStyle.Right, Width = 150, Font = new Font("Segoe UI", 10), PlaceholderText = "Search" };
         top.Controls.Add(path); top.Controls.Add(up); top.Controls.Add(nf); top.Controls.Add(sb);
         var il = new ImageList { ImageSize = Ui.D(40, 40), ColorDepth = ColorDepth.Depth32Bit };
         var lv = new ListView { Dock = DockStyle.Fill, View = View.LargeIcon, LargeImageList = il, LabelEdit = true, Font = new Font("Segoe UI", 9.5f) };
@@ -163,21 +163,21 @@ static class Views
         m.Items.Add("Open", null, (_, _) => { if (lv.SelectedItems.Count > 0) { var t = (string)lv.SelectedItems[0].Tag!; if (Directory.Exists(t)) Go(t); else sh.OpenFile(t); } });
         m.Items.Add("Rename", null, (_, _) => { if (lv.SelectedItems.Count > 0) lv.SelectedItems[0].BeginEdit(); });
         m.Items.Add("Delete", null, (_, _) => { foreach (ListViewItem it in lv.SelectedItems) try { Bin.Trash((string)it.Tag!); } catch { } Go(cur); sh.Reload(); sh.Toast("Moved to Recycle Bin"); });
-        void Sel(bool c) { clip = lv.SelectedItems.Cast<ListViewItem>().Select(i => (string)i.Tag!).ToList(); cutMode = c; sh.Toast((c ? "✂ Cut " : "📋 Copied ") + clip.Count + " item(s)"); }
+        void Sel(bool c) { clip = lv.SelectedItems.Cast<ListViewItem>().Select(i => (string)i.Tag!).ToList(); cutMode = c; sh.Toast((c ? "Cut " : "Copied ") + clip.Count + " item(s)"); }
         void Paste()
         {
             foreach (var s in clip) { try { var d = U.Unique(cur, Path.GetFileName(s)); if (Directory.Exists(s)) { if (cutMode) Directory.Move(s, d); else CopyDir(s, d); } else if (cutMode) File.Move(s, d); else File.Copy(s, d); } catch (Exception ex) { sh.Toast(ex.Message); } }
             if (cutMode) clip.Clear(); Go(cur); sh.Reload();
         }
         m.Items.Add("Copy", null, (_, _) => Sel(false)); m.Items.Add("Cut", null, (_, _) => Sel(true)); m.Items.Add("Paste", null, (_, _) => Paste());
-        m.Items.Add("🗜  Compress to zip", null, (_, _) =>
+        m.Items.Add("Compress to zip", null, (_, _) =>
         {
             foreach (ListViewItem it in lv.SelectedItems)
                 try { var t = (string)it.Tag!; var z = U.Unique(cur, Path.GetFileNameWithoutExtension(t) + ".zip"); if (Directory.Exists(t)) System.IO.Compression.ZipFile.CreateFromDirectory(t, z); else { using var za = System.IO.Compression.ZipFile.Open(z, System.IO.Compression.ZipArchiveMode.Create); System.IO.Compression.ZipFileExtensions.CreateEntryFromFile(za, t, Path.GetFileName(t)); } }
                 catch (Exception ex) { sh.Toast(ex.Message); }
             Go(cur);
         });
-        m.Items.Add("📦  Extract here", null, (_, _) =>
+        m.Items.Add("Extract here", null, (_, _) =>
         {
             foreach (ListViewItem it in lv.SelectedItems) { var t = (string)it.Tag!; if (t.EndsWith(".zip")) try { System.IO.Compression.ZipFile.ExtractToDirectory(t, U.Unique(cur, Path.GetFileNameWithoutExtension(t))); } catch (Exception ex) { sh.Toast(ex.Message); } }
             Go(cur);
@@ -189,95 +189,140 @@ static class Views
 
     public static Control Settings(DesktopForm sh, int start)
     {
-        var root = new Panel(); var nav = new Panel { Dock = DockStyle.Left, Width = 200, BackColor = Ui.Surface2 };
-        var page = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, AutoScroll = true };
-        root.Controls.Add(page); root.Controls.Add(nav);
-        string[] names = { "🎨  Personalization", "🖥  Display", "👤  Accounts", "🔒  Lock screen", "🛡  Security", "🛍  Store", "ℹ  About & updates" };
+        var root = new Panel { BackColor = Ui.Surface }; Ui.Own(root);
+        var nav = new Panel { Dock = DockStyle.Left, Width = Ui.D(232), BackColor = Ui.Surface2 };
+        var host = new Panel { Dock = DockStyle.Fill, BackColor = Ui.Surface };
+        root.Controls.Add(host); root.Controls.Add(nav);
+        string[] names = { "Personalization", "Display", "Accounts", "Lock screen", "Browser", "Security", "Store", "About & updates" };
+        string[] icons = { "paint", "vm", "user", "vault", "browser", "tm", "store", "settings" };
         var navBtns = new List<RoundButton>(); Action<int> show = _ => { };
         for (int i = 0; i < names.Length; i++)
         {
-            int k = i; var b = new RoundButton { Text = names[i], Bounds = new Rectangle(8, 14 + i * 46, 184, 40), FlatStyle = FlatStyle.Flat, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Emoji", 10.5f), BackColor = nav.BackColor };
-            b.FlatAppearance.BorderSize = 0; b.Click += (_, _) => show(k); nav.Controls.Add(b); navBtns.Add(b);
+            int k = i; var b = new RoundButton { Text = names[i], Ico = Icons.App(icons[i]), TextAlign = ContentAlignment.MiddleLeft, Font = Ui.F(10.5f), BackColor = nav.BackColor, Radius = 10 };
+            b.Bounds = new Rectangle(Ui.D(10), Ui.D(14) + i * Ui.D(48), Ui.D(232) - Ui.D(20), Ui.D(42)); b.Click += (_, _) => show(k); nav.Controls.Add(b); navBtns.Add(b);
         }
-        Label L(string t, int x, int y, float sz = 10, bool bold = false) { var l = new Label { Text = t, Location = new Point(x, y), AutoSize = true, Font = new Font("Segoe UI", sz, bold ? FontStyle.Bold : FontStyle.Regular) }; page.Controls.Add(l); return l; }
-        Button B(string t, int x, int y, int w, Action a) { var b = new RoundButton { Text = t, Bounds = new Rectangle(x, y, w, 34), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White, Cursor = Cursors.Hand }; b.FlatAppearance.BorderSize = 0; b.Click += (_, _) => a(); page.Controls.Add(b); return b; }
-        TextBox T(int x, int y, int w, bool pw = false) { var t = new TextBox { Bounds = new Rectangle(x, y, w, 28), UseSystemPasswordChar = pw, Font = new Font("Segoe UI", 10.5f) }; page.Controls.Add(t); return t; }
         string? Pick() { using var d = new OpenFileDialog { Filter = "Images|*.png;*.jpg;*.jpeg;*.bmp" }; return d.ShowDialog() == DialogResult.OK ? d.FileName : null; }
 
         show = k =>
         {
-            page.Controls.Clear(); for (int q = 0; q < navBtns.Count; q++) navBtns[q].BackColor = q == k ? Theme.Accent : Ui.Surface2;
+            foreach (Control c in host.Controls.Cast<Control>().ToList()) { host.Controls.Remove(c); c.Dispose(); }
+            for (int q = 0; q < navBtns.Count; q++) navBtns[q].BackColor = q == k ? Theme.Accent : Ui.Surface2;
+            var pg = new PagePanel(); host.Controls.Add(pg);
             switch (k)
             {
                 case 0:
-                    L("Personalization", 24, 18, 18, true); L("Choose a background", 24, 62, 11);
+                {
+                    pg.H("Personalization"); pg.P("Choose a background", true);
+                    var grid = pg.Row(8);
                     for (int i = 0; i < Theme.P.Length; i++)
                     {
                         int idx = i; bool on = Cfg.Get("wallimg") == "" && Theme.Idx == i;
-                        var pb = new PictureBox { Bounds = new Rectangle(24 + i % 3 * 200, 96 + i / 3 * 130, 184, 104), Image = Theme.Preset(new Size(184, 104), i), SizeMode = PictureBoxSizeMode.Zoom, Cursor = Cursors.Hand, BorderStyle = on ? BorderStyle.Fixed3D : BorderStyle.None };
-                        pb.Click += (_, _) => { Cfg.Set("wp", idx.ToString()); Cfg.Set("wallimg", ""); sh.ApplyLook(); show(0); };
-                        page.Controls.Add(pb); L(Theme.P[i].N + (on ? "  ✓" : ""), 24 + i % 3 * 200, 202 + i / 3 * 130, 9);
+                        var th = new Thumb(Theme.Preset(new Size(Ui.D(300), Ui.D(170)), i), Theme.P[i].N, on) { Margin = new Padding(0, 0, Ui.D(14), Ui.D(10)) };
+                        th.Click += (_, _) => { Cfg.Set("wp", idx.ToString()); Cfg.Set("wallimg", ""); sh.ApplyLook(); show(0); };
+                        grid.Controls.Add(th);
                     }
-                    B("🖼  Use my own picture…", 24, 96 + ((Theme.P.Length + 2) / 3) * 130 + 8, 220, () => { var f = Pick(); if (f != null) { Cfg.Set("wallimg", U.SaveImg(f, "wallpaper")); sh.ApplyLook(); show(0); } });
+                    var r = pg.Row(8); pg.Btn(r, "Use my own picture…", () => { var f = Pick(); if (f != null) { Cfg.Set("wallimg", U.SaveImg(f, "wallpaper")); sh.ApplyLook(); show(0); } });
                     break;
+                }
                 case 1:
-                    L("Display", 24, 18, 18, true); var scr = Screen.PrimaryScreen!.Bounds; L($"Resolution: {scr.Width} × {scr.Height}", 24, 62, 11);
-                    L("Desktop icon size", 24, 104, 11, true);
-                    int x = 24; foreach (var (n, v) in new[] { ("Small", 40), ("Medium", 52), ("Large", 68) }) { var vv = v; B(n + (Cfg.Int("icon", 52) == v ? " ✓" : ""), x, 134, 100, () => { Cfg.Set("icon", vv.ToString()); sh.Reload(); show(1); }); x += 110; }
-                    var c1 = new CheckBox { Text = "Show desktop icons", Checked = Cfg.Get("icons", "1") == "1", Location = new Point(24, 190), AutoSize = true, Font = new Font("Segoe UI", 10.5f) };
-                    c1.CheckedChanged += (_, _) => { Cfg.Set("icons", c1.Checked ? "1" : "0"); sh.Reload(); };
-                    var c2 = new CheckBox { Text = "24-hour clock", Checked = Cfg.Get("h24", "1") == "1", Location = new Point(24, 224), AutoSize = true, Font = new Font("Segoe UI", 10.5f) };
-                    c2.CheckedChanged += (_, _) => Cfg.Set("h24", c2.Checked ? "1" : "0");
-                    var c3 = new CheckBox { Text = "Show clock widget", Checked = Cfg.Get("wclock", "1") == "1", Location = new Point(24, 258), AutoSize = true, Font = new Font("Segoe UI", 10.5f) };
-                    c3.CheckedChanged += (_, _) => { Cfg.Set("wclock", c3.Checked ? "1" : "0"); sh.ApplyWidgets(); };
-                    var c4 = new CheckBox { Text = "Show sticky note", Checked = Cfg.Get("wnote", "1") == "1", Location = new Point(24, 292), AutoSize = true, Font = new Font("Segoe UI", 10.5f) };
-                    c4.CheckedChanged += (_, _) => { Cfg.Set("wnote", c4.Checked ? "1" : "0"); sh.ApplyWidgets(); };
-                    page.Controls.Add(c1); page.Controls.Add(c2); page.Controls.Add(c3); page.Controls.Add(c4); break;
+                {
+                    pg.H("Display"); var scr = Screen.PrimaryScreen!.Bounds; pg.P($"Resolution: {scr.Width} × {scr.Height}", true);
+                    pg.P("Desktop icon size", false, true, 11, 14); var r = pg.Row(4);
+                    foreach (var (n, v) in new[] { ("Small", 44), ("Medium", 56), ("Large", 72) }) { var vv = v; pg.Btn(r, n, () => { Cfg.Set("icon", vv.ToString()); sh.Reload(); show(1); }, Cfg.Int("icon", 56) == v); }
+                    pg.Gap(6);
+                    pg.Switch("Show desktop icons", Cfg.Get("icons", "1") == "1", on => { Cfg.Set("icons", on ? "1" : "0"); sh.Reload(); });
+                    pg.Switch("24-hour clock", Cfg.Get("h24", "1") == "1", on => Cfg.Set("h24", on ? "1" : "0"));
+                    pg.Switch("Show clock widget", Cfg.Get("wclock", "1") == "1", on => { Cfg.Set("wclock", on ? "1" : "0"); sh.ApplyWidgets(); });
+                    pg.Switch("Show sticky note", Cfg.Get("wnote", "1") == "1", on => { Cfg.Set("wnote", on ? "1" : "0"); sh.ApplyWidgets(); });
+                    break;
+                }
                 case 2:
-                    L("Accounts", 24, 18, 18, true);
-                    page.Controls.Add(new PictureBox { Bounds = new Rectangle(24, 62, 120, 120), Image = U.Avatar(120), SizeMode = PictureBoxSizeMode.Zoom });
-                    B("📷  Change picture…", 164, 100, 180, () => { var f = Pick(); if (f != null && U.SetAvatar(f)) { sh.ApplyLook(); show(2); } });
-                    L("Display name", 24, 204, 10, true); var tn = T(24, 230, 240); tn.Text = Cfg.Get("name", Environment.UserName);
-                    B("Save name", 280, 227, 110, () => { if (tn.Text.Trim() != "") { Cfg.Set("name", tn.Text.Trim()); sh.ApplyLook(); sh.Toast("Name saved"); } });
-                    L("Change password", 24, 290, 10, true); L("Current", 24, 320, 9); var po = T(24, 342, 240, true); L("New", 24, 376, 9); var pn = T(24, 398, 240, true);
-                    B("Change password", 24, 436, 160, () =>
+                {
+                    pg.H("Accounts"); var r = pg.Row(4);
+                    var av = new PictureBox { Size = Ui.D(110, 110), Image = U.Avatar(Ui.D(110)), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Margin = new Padding(0, 0, Ui.D(18), Ui.D(6)) }; r.Controls.Add(av);
+                    pg.Btn(r, "Change picture…", () => { var f = Pick(); if (f != null && U.SetAvatar(f)) { sh.ApplyLook(); show(2); } }, false).Margin = new Padding(0, Ui.D(36), 0, 0);
+                    pg.P("Display name", false, true, 10.5f, 12); var rn = pg.Row(2); var (_, tn) = pg.Field(rn, "Your name", 260, false, Cfg.Get("name", Environment.UserName));
+                    pg.Btn(rn, "Save name", () => { if (tn.Text.Trim() != "") { Cfg.Set("name", tn.Text.Trim()); sh.ApplyLook(); sh.Toast("Name saved"); } });
+                    pg.P("Change password", false, true, 10.5f, 14);
+                    var r1 = pg.Row(2); var (_, po) = pg.Field(r1, "Current password", 260, true);
+                    var r2 = pg.Row(2); var (_, pn) = pg.Field(r2, "New password", 260, true);
+                    pg.Btn(r2, "Change password", () =>
                     {
                         var uf = Path.Combine(Paths.Data, "user.txt");
                         if (!U.Check(po.Text, File.ReadAllText(uf).Trim())) { sh.Toast("Current password is wrong"); return; }
                         if (pn.Text.Length < 1) { sh.Toast("Type a new password"); return; }
-                        File.WriteAllText(uf, U.MakeHash(pn.Text)); po.Clear(); pn.Clear(); sh.Toast("🔑 Password changed");
+                        File.WriteAllText(uf, U.MakeHash(pn.Text)); po.Clear(); pn.Clear(); sh.Toast("Password changed");
                     });
                     break;
+                }
                 case 3:
-                    L("Lock screen", 24, 18, 18, true); L("This picture shows on the sign-in screen", 24, 62, 11);
-                    page.Controls.Add(new PictureBox { Bounds = new Rectangle(24, 96, 360, 200), Image = Theme.Lock(new Size(360, 200)), SizeMode = PictureBoxSizeMode.Zoom, BorderStyle = BorderStyle.FixedSingle });
-                    B("🖼  Choose picture…", 24, 312, 180, () => { var f = Pick(); if (f != null) { Cfg.Set("lockimg", U.SaveImg(f, "lock")); show(3); } });
-                    B("Use my wallpaper", 214, 312, 170, () => { Cfg.Set("lockimg", ""); show(3); }); break;
+                {
+                    pg.H("Lock screen"); pg.P("This picture shows on the sign-in screen", true);
+                    var pb = new PictureBox { Size = Ui.D(380, 214), Image = Theme.Lock(Ui.D(380, 214)), SizeMode = PictureBoxSizeMode.Zoom, Margin = new Padding(0, Ui.D(8), 0, Ui.D(8)) }; pg.Controls.Add(pb);
+                    var r = pg.Row(4); pg.Btn(r, "Choose picture…", () => { var f = Pick(); if (f != null) { Cfg.Set("lockimg", U.SaveImg(f, "lock")); show(3); } });
+                    pg.Btn(r, "Use my wallpaper", () => { Cfg.Set("lockimg", ""); show(3); }, false);
+                    break;
+                }
                 case 4:
-                    L("Security", 24, 18, 18, true); L("Auto-lock after being idle (minutes, 0 = off)", 24, 66, 11);
-                    var ni = new NumericUpDown { Bounds = new Rectangle(24, 96, 90, 28), Minimum = 0, Maximum = 240, Value = Math.Clamp(Cfg.Int("idle", 10), 0, 240), Font = new Font("Segoe UI", 10.5f) };
-                    ni.ValueChanged += (_, _) => Cfg.Set("idle", ((int)ni.Value).ToString()); page.Controls.Add(ni);
-                    var cu = new CheckBox { Text = "Close the desktop when the USB is removed", Checked = Cfg.Get("usbwatch", "1") == "1", Location = new Point(24, 148), AutoSize = true, Font = new Font("Segoe UI", 10.5f) };
-                    cu.CheckedChanged += (_, _) => Cfg.Set("usbwatch", cu.Checked ? "1" : "0"); page.Controls.Add(cu);
-                    L("Passwords are salted and hashed (PBKDF2). Change yours in Accounts.", 24, 196, 10); break;
+                {
+                    pg.H("Browser"); pg.P("Search engine", false, true, 11, 6); var r = pg.Row(4); var cur = Cfg.Get("engine", "google");
+                    foreach (var (n, key) in new[] { ("Google", "google"), ("Bing", "bing"), ("DuckDuckGo", "duck") }) { var kk = key; pg.Btn(r, n, () => { Cfg.Set("engine", kk); show(4); }, cur == key); }
+                    pg.Gap(6); pg.Switch("Keep me signed in to websites (accounts travel with this USB)", Cfg.Get("keeplogins", "1") == "1", on => Cfg.Set("keeplogins", on ? "1" : "0"));
+                    pg.P("Your logins and saved passwords are stored in the data folder on the USB. Anyone with the USB can use them, so keep your password and the USB safe.", true, false, 10, 10);
+                    var r2 = pg.Row(8); pg.Btn(r2, "Open downloads folder", () => { var d = Path.Combine(Paths.Desktop, "Downloads"); Directory.CreateDirectory(d); U.Open(d); }, false);
+                    break;
+                }
                 case 5:
-                    L("MLD Store", 24, 18, 18, true); L("Store website address", 24, 66, 11); var su = T(24, 96, 420); su.Text = Cfg.Get("store_url");
-                    B("Save", 460, 93, 90, () => { Cfg.Set("store_url", su.Text.Trim()); sh.Toast("Store address saved"); });
-                    L("Apps you download in the store go to your apps folder and show in the Start menu.", 24, 140, 10); break;
+                {
+                    pg.H("Security"); pg.P("Auto-lock after being idle (minutes, 0 = off)", false, false, 11); var r = pg.Row(4); pg.Num(r, 0, 240, Cfg.Int("idle", 10), 1, v => Cfg.Set("idle", v.ToString()));
+                    pg.Switch("Close the desktop when the USB is removed", Cfg.Get("usbwatch", "1") == "1", on => Cfg.Set("usbwatch", on ? "1" : "0"));
+                    pg.P("Passwords are salted and hashed (PBKDF2). Change yours in Accounts.", true, false, 10, 12);
+                    break;
+                }
+                case 6:
+                {
+                    pg.H("MLD Store"); pg.P("Store website address", false, true, 11); var r = pg.Row(4); var (_, su) = pg.Field(r, "https://your-store.example.com", 400, false, Cfg.Get("store_url"));
+                    pg.Btn(r, "Save", () => { Cfg.Set("store_url", su.Text.Trim()); sh.Toast("Store address saved"); });
+                    pg.P("Apps you download in the store go to your apps folder and show in the Start menu, with live install progress.", true, false, 10, 10);
+                    break;
+                }
                 default:
-                    L("About", 24, 18, 18, true);
+                {
+                    pg.H("About & updates");
                     var root2 = Path.GetPathRoot(Paths.Root)!; string free = ""; try { var di = new DriveInfo(root2); free = $"{di.AvailableFreeSpace / 1073741824} GB free of {di.TotalSize / 1073741824} GB"; } catch { }
-                    L("USB Desktop  v2.0", 24, 66, 12, true); L("Computer: " + Cfg.Get("name", Environment.UserName) + "'s USB PC", 24, 100, 11);
-                    L("Drive: " + root2 + "   " + free, 24, 132, 11); L("Running from: " + Paths.Root, 24, 164, 10); L("Version 1.0." + Updater.Cur, 24, 196, 10); var ul = L("", 24, 276, 10);
-                    B("⬆  Check for updates", 24, 230, 200, async () =>
+                    pg.P("USB Desktop", false, true, 13); pg.P("Version 1.0." + Updater.Cur, true);
+                    pg.P("Computer: " + Cfg.Get("name", Environment.UserName) + "'s USB PC"); pg.P("Drive: " + root2 + "   " + free); pg.P("Running from: " + Paths.Root, true, false, 9.5f);
+                    var ul = pg.P("", true, false, 10.5f, 10); var r = pg.Row(6);
+                    pg.Btn(r, "Check for updates", async () =>
                     {
-                        ul.Text = "Checking...";
-                        try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { ul.Text = "Version 1.0." + u.latest + " found."; await Updater.Run(u.latest, u.url, true); } else ul.Text = "You're up to date ✅"; }
+                        ul.Text = "Checking…";
+                        try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { ul.Text = "Version 1.0." + u.latest + " is available."; await Updater.Run(u.latest, u.url, true); } else ul.Text = "You're up to date."; }
                         catch (Exception ex) { ul.Text = "Couldn't check: " + ex.Message; }
-                    }); break;
+                    });
+                    break;
+                }
             }
-            Ui.Skin(page); Ui.Fit(page);
         };
-        show(Math.Clamp(start, 0, 6)); return root;
+        show(Math.Clamp(start, 0, 7)); return root;
+    }
+}
+
+class Thumb : Control
+{
+    readonly Bitmap img; readonly string cap; readonly bool on; bool hover;
+    public Thumb(Bitmap img, string cap, bool on)
+    {
+        this.img = img; this.cap = cap; this.on = on; Size = new Size(Ui.D(200), Ui.D(142)); Cursor = Cursors.Hand;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
+    }
+    protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics; g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias; g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic; g.Clear(Ui.PBg(this, Ui.Surface));
+        var r = new Rectangle(Ui.D(3), Ui.D(3), Width - Ui.D(7), Height - Ui.D(34)); using var p = U.Round(r, Ui.D(10));
+        var st = g.Save(); g.SetClip(p, System.Drawing.Drawing2D.CombineMode.Intersect); g.DrawImage(img, r); g.Restore(st);
+        using var pen = new Pen(on ? Theme.Accent : hover ? Color.FromArgb(150, 154, 200) : Ui.Line, on ? Ui.D(3) : Ui.D(1)); g.DrawPath(pen, p);
+        TextRenderer.DrawText(g, cap + (on ? "  ✓" : ""), Ui.F(9.5f), new Rectangle(Ui.D(3), Height - Ui.D(28), Width - Ui.D(6), Ui.D(24)), on ? Ui.Text : Ui.Sub, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
     }
 }

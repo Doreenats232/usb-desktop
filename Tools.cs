@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 namespace UsbDesktop;
@@ -36,38 +37,77 @@ class Splash : Panel
         g.DrawImage(av, (Width - Ui.D(110)) / 2, Height / 2 - Ui.D(120));
         using var f = new Font("Segoe UI Light", 26);
         TextRenderer.DrawText(g, "Welcome, " + Cfg.Get("name", Environment.UserName), f, new Rectangle(0, Height / 2 + Ui.D(10), Width, Ui.D(60)), Color.White, TextFormatFlags.HorizontalCenter);
-        for (int i = 0; i < 5; i++) { using var b = new SolidBrush(i == n % 5 ? Color.White : Color.FromArgb(90, 255, 255, 255)); g.FillEllipse(b, Width / 2 - Ui.D(50) + i * Ui.D(20), Height / 2 + Ui.D(90), Ui.D(10), Ui.D(10)); }
+        g.SmoothingMode = SmoothingMode.AntiAlias; int bw = Ui.D(220), bx = (Width - bw) / 2, by = Height / 2 + Ui.D(96);
+        using (var tp = U.Round(new Rectangle(bx, by, bw, Ui.D(6)), Ui.D(3))) using (var tb = new SolidBrush(Color.FromArgb(70, 255, 255, 255))) g.FillPath(tb, tp);
+        int fw = (int)(bw * Math.Min(1.0, n / 22.0)); if (fw > Ui.D(6)) { using var fp = U.Round(new Rectangle(bx, by, fw, Ui.D(6)), Ui.D(3)); using var fb = new LinearGradientBrush(new Rectangle(bx, by, bw, Ui.D(6)), Ui.Accent, Ui.Accent2, 0f); g.FillPath(fb, fp); }
+    }
+}
+
+class GlyphLabel : Control
+{
+    public string Glyph = "";
+    public GlyphLabel() { SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true); Font = Ui.F(10.5f); ForeColor = Ui.Text; }
+    protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Invalidate(); }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics; g.Clear(Ui.PBg(this, Ui.Surface)); float s = Height * 0.5f;
+        if (Glyph != "") Glyphs.Draw(g, Glyph, new RectangleF(0, (Height - s) / 2f, s, s), Ui.Sub, Math.Max(1.5f, s * 0.11f));
+        int x = Glyph != "" ? (int)s + Ui.D(10) : 0;
+        TextRenderer.DrawText(g, Text, Font, new Rectangle(x, 0, Math.Max(4, Width - x), Height), ForeColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+    }
+}
+
+class TrayStrip : Control
+{
+    int batt = -1; public int Battery { get => batt; set { if (batt != value) { batt = value; Invalidate(); } } }
+    public TrayStrip() { SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true); Cursor = Cursors.Hand; }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics; g.Clear(Ui.PBg(this, Ui.Surface)); int s = Ui.D(18), y = (Height - s) / 2, x = Width - Ui.D(12) - s;
+        var c = Ui.Text; float w = 1.6f * Ui.S;
+        if (batt >= 0)
+        {
+            var t = batt + "%"; var sz = TextRenderer.MeasureText(t, Ui.F(9), new Size(999, 99), TextFormatFlags.NoPadding); x -= sz.Width + Ui.D(4);
+            TextRenderer.DrawText(g, t, Ui.F(9), new Point(x + s + Ui.D(6), (Height - sz.Height) / 2), c, TextFormatFlags.NoPadding);
+            Glyphs.Draw(g, "battery", new RectangleF(x, y, s, s), c, w); x -= s + Ui.D(12);
+        }
+        Glyphs.Draw(g, "speaker", new RectangleF(x, y, s, s), c, w); x -= s + Ui.D(14);
+        Glyphs.Draw(g, "wifi", new RectangleF(x, y, s, s), c, w);
     }
 }
 
 class QuickPanel : RoundPanel
 {
-    readonly DesktopForm sh; readonly ListBox notes = new(); readonly Label net = new(), bat = new(); readonly TrackBar vol = new();
+    readonly DesktopForm sh; readonly ListBox notes = new(); readonly GlyphLabel net = new(), bat = new(); readonly TrackBar vol = new();
     [DllImport("winmm.dll")] static extern int waveOutSetVolume(IntPtr h, uint v);
     [DllImport("winmm.dll")] static extern int waveOutGetVolume(IntPtr h, out uint v);
     public QuickPanel(DesktopForm sh)
     {
-        this.sh = sh; Size = new Size(350, 590); Floating = true; Fill = Ui.Surface; Visible = false;
-        Label L(string t, int y) { var l = new Label { Text = t, Location = new Point(16, y), AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI Emoji", 10, FontStyle.Bold) }; Controls.Add(l); return l; }
-        Controls.Add(new MonthCalendar { Location = new Point(61, 16) });
-        L("🔊  Volume", 196); vol.Bounds = new Rectangle(12, 220, 322, 45); vol.Maximum = 100; vol.TickFrequency = 25;
-        vol.Scroll += (_, _) => { uint v = (uint)(vol.Value * 65535 / 100); waveOutSetVolume(IntPtr.Zero, (v & 0xFFFF) | (v << 16)); }; Controls.Add(vol);
-        foreach (var l in new[] { net, bat }) { l.AutoSize = true; l.ForeColor = Color.White; l.Font = new Font("Segoe UI Emoji", 10); Controls.Add(l); }
-        net.Location = new Point(16, 280); bat.Location = new Point(16, 318);
-        var wb = new RoundButton { Text = "Wi-Fi settings", Bounds = new Rectangle(220, 274, 114, 30), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(55, 55, 80) };
-        wb.FlatAppearance.BorderSize = 0; wb.Click += (_, _) => U.Open("ms-settings:network-wifi"); Controls.Add(wb);
-        L("🔔  Notifications", 354);
-        var clr = new RoundButton { Text = "Clear", Bounds = new Rectangle(260, 350, 74, 26), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(55, 55, 80) };
-        clr.FlatAppearance.BorderSize = 0; clr.Click += (_, _) => { sh.Notes.Clear(); Refresh2(); }; Controls.Add(clr);
-        notes.Bounds = new Rectangle(16, 384, 318, 170); notes.BackColor = Color.FromArgb(44, 44, 62); notes.ForeColor = Color.White; notes.BorderStyle = BorderStyle.None; Controls.Add(notes);
+        this.sh = sh; Ui.Own(this); Floating = true; Fill = Ui.Surface; Radius = Ui.D(16); Visible = false;
+        int W = Ui.D(372), pad = Ui.D(18), inner = W - pad * 2;
+        var cal = new MonthCalendar { BackColor = Ui.Surface2, ForeColor = Ui.Text, TitleBackColor = Theme.Accent, TitleForeColor = Color.White, TrailingForeColor = Color.FromArgb(120, 124, 160), Font = Ui.F(9.5f) };
+        cal.Location = new Point((W - cal.Width) / 2, pad); Controls.Add(cal); int y = cal.Bottom + Ui.D(18);
+        GlyphLabel Head(string glyph, string t) { var l = new GlyphLabel { Glyph = glyph, Text = t, Font = Ui.F(10.5f, true), Bounds = new Rectangle(pad, y, inner, Ui.D(28)) }; Controls.Add(l); y += Ui.D(30); return l; }
+        Head("speaker", "Volume");
+        vol.Bounds = new Rectangle(pad - Ui.D(4), y, inner + Ui.D(8), Ui.D(40)); vol.Maximum = 100; vol.TickFrequency = 25; vol.BackColor = Ui.Surface;
+        vol.Scroll += (_, _) => { uint v = (uint)(vol.Value * 65535 / 100); waveOutSetVolume(IntPtr.Zero, (v & 0xFFFF) | (v << 16)); }; Controls.Add(vol); y += Ui.D(46);
+        net.Glyph = "wifi"; net.Bounds = new Rectangle(pad, y, inner - Ui.D(132), Ui.D(34)); Controls.Add(net);
+        var wb = new RoundButton { Text = "Wi-Fi settings", Bounds = new Rectangle(pad + inner - Ui.D(124), y, Ui.D(124), Ui.D(34)), Pill = true, BackColor = Color.FromArgb(52, 55, 86), Font = Ui.F(9.5f) };
+        wb.Click += (_, _) => U.Open("ms-settings:network-wifi"); Controls.Add(wb); y += Ui.D(42);
+        bat.Glyph = "battery"; bat.Bounds = new Rectangle(pad, y, inner, Ui.D(30)); Controls.Add(bat); y += Ui.D(40);
+        var nh = new GlyphLabel { Glyph = "bell", Text = "Notifications", Font = Ui.F(10.5f, true), Bounds = new Rectangle(pad, y, inner - Ui.D(84), Ui.D(30)) }; Controls.Add(nh);
+        var clr = new RoundButton { Text = "Clear", Bounds = new Rectangle(pad + inner - Ui.D(76), y, Ui.D(76), Ui.D(30)), Pill = true, BackColor = Color.FromArgb(52, 55, 86), Font = Ui.F(9.5f) };
+        clr.Click += (_, _) => { sh.Notes.Clear(); Refresh2(); }; Controls.Add(clr); y += Ui.D(38);
+        notes.Bounds = new Rectangle(pad, y, inner, Ui.D(150)); notes.BackColor = Ui.Surface2; notes.ForeColor = Ui.Text; notes.BorderStyle = BorderStyle.None; notes.Font = Ui.F(9.5f); notes.IntegralHeight = false; Controls.Add(notes); y += Ui.D(150) + pad;
+        Size = new Size(W, y);
     }
     public void Refresh2()
     {
         notes.Items.Clear(); foreach (var n in Enumerable.Reverse(sh.Notes)) notes.Items.Add(n);
         var ps = SystemInformation.PowerStatus;
-        bat.Text = ps.BatteryChargeStatus == BatteryChargeStatus.NoSystemBattery ? "🔌  Plugged in" : "🔋  Battery " + (int)(Math.Min(1f, ps.BatteryLifePercent) * 100) + "%";
+        bat.Text = ps.BatteryChargeStatus == BatteryChargeStatus.NoSystemBattery ? "Plugged in" : "Battery " + (int)(Math.Min(1f, ps.BatteryLifePercent) * 100) + "%";
         if (waveOutGetVolume(IntPtr.Zero, out var v) == 0) vol.Value = Math.Clamp((int)((v & 0xFFFF) * 100 / 65535), 0, 100);
-        net.Text = "📶  Checking…";
+        net.Text = "Checking…";
         Task.Run(() =>
         {
             try
@@ -77,7 +117,7 @@ class QuickPanel : RoundPanel
                 return m.Success ? m.Groups[1].Value.Trim() : "Not connected to Wi-Fi";
             }
             catch { return "Network unavailable"; }
-        }).ContinueWith(t => { if (!IsDisposed) BeginInvoke(new Action(() => net.Text = "📶  " + t.Result)); });
+        }).ContinueWith(t => { if (!IsDisposed) BeginInvoke(new Action(() => net.Text = t.Result)); });
     }
 }
 
@@ -88,7 +128,7 @@ static class Tools
     public static Panel Sticky()
     {
         var p = new Panel { Size = new Size(220, 190), BackColor = Color.FromArgb(255, 239, 140), Padding = new Padding(8, 0, 8, 8) };
-        var h = new Label { Text = "📌  Sticky note", Dock = DockStyle.Top, Height = 28, Font = new Font("Segoe UI Emoji", 10, FontStyle.Bold), ForeColor = Color.FromArgb(90, 70, 0), TextAlign = ContentAlignment.MiddleLeft };
+        var h = new Label { Text = "Sticky note", Dock = DockStyle.Top, Height = 28, Font = new Font("Segoe UI Emoji", 10, FontStyle.Bold), ForeColor = Color.FromArgb(90, 70, 0), TextAlign = ContentAlignment.MiddleLeft };
         var tb = new TextBox { Multiline = true, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = p.BackColor, Font = new Font("Segoe UI", 11), Text = Cfg.Get("sticky").Replace("¶", "\r\n") };
         tb.TextChanged += (_, _) => Cfg.Set("sticky", tb.Text.Replace("\r\n", "¶").Replace("\n", "¶"));
         p.Controls.Add(tb); p.Controls.Add(h); return p;
@@ -100,8 +140,8 @@ static class Tools
         var pb = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom };
         var bar = new Panel { Dock = DockStyle.Bottom, Height = 40, BackColor = Color.FromArgb(32, 32, 44) };
         var cap = new Label { Dock = DockStyle.Fill, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter };
-        Button Nb(string t, DockStyle d) => new RoundButton { Text = t, Dock = d, Width = 60, FlatStyle = FlatStyle.Flat, ForeColor = Color.White };
-        var prev = Nb("◀", DockStyle.Left); var next = Nb("▶", DockStyle.Right);
+        RoundButton Nb(string t, DockStyle d) => new RoundButton { Text = t, Dock = d, Width = 60, FlatStyle = FlatStyle.Flat, ForeColor = Color.White };
+        var prev = Nb("", DockStyle.Left); prev.Glyph = "back"; var next = Nb("", DockStyle.Right); next.Glyph = "fwd";
         var exts = new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif" };
         var files = Directory.GetFiles(Path.GetDirectoryName(path)!).Where(f => exts.Contains(Path.GetExtension(f).ToLower())).OrderBy(f => f).ToList();
         if (!files.Contains(path)) files.Add(path); int i = files.IndexOf(path);

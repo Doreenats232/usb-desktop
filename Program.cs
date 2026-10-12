@@ -87,34 +87,7 @@ static class U
         p.AddArc(r.X, r.Y, d, d, 180, 90); p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
         p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90); p.AddArc(r.X, r.Bottom - d, d, d, 90, 90); p.CloseFigure(); return p;
     }
-    public static Bitmap Tile(string glyph, Color c, int s = 64)
-    {
-        var b = new Bitmap(s, s); using var g = Graphics.FromImage(b); g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-        var r = new Rectangle(1, 1, s - 3, s - 3); using var p = Round(r, s / 4);
-        using (var br = new LinearGradientBrush(r, ControlPaint.Light(c, 0.35f), ControlPaint.Dark(c, 0.12f), 55f)) g.FillPath(br, p);
-        g.SetClip(p); using (var gl = new LinearGradientBrush(new Rectangle(0, 0, s, s / 2 + 2), Color.FromArgb(80, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90f)) g.FillRectangle(gl, 0, 0, s, s / 2 + 2); g.ResetClip();
-        using (var pen = new Pen(Color.FromArgb(70, 255, 255, 255), 1)) g.DrawPath(pen, p);
-        using var f = new Font("Segoe UI Emoji", s * 0.44f, GraphicsUnit.Pixel);
-        TextRenderer.DrawText(g, glyph, f, new Rectangle(0, 0, s, s), Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        return b;
-    }
-    static readonly Dictionary<string, (string, Color)> kinds = new()
-    {
-        [".png"] = ("🖼", Color.FromArgb(236, 72, 153)), [".jpg"] = ("🖼", Color.FromArgb(236, 72, 153)), [".jpeg"] = ("🖼", Color.FromArgb(236, 72, 153)), [".gif"] = ("🖼", Color.FromArgb(236, 72, 153)), [".bmp"] = ("🖼", Color.FromArgb(236, 72, 153)),
-        [".mp3"] = ("🎵", Color.FromArgb(139, 92, 246)), [".wav"] = ("🎵", Color.FromArgb(139, 92, 246)), [".mp4"] = ("🎬", Color.FromArgb(239, 68, 68)), [".mkv"] = ("🎬", Color.FromArgb(239, 68, 68)),
-        [".zip"] = ("📦", Color.FromArgb(217, 119, 6)), [".rar"] = ("📦", Color.FromArgb(217, 119, 6)), [".7z"] = ("📦", Color.FromArgb(217, 119, 6)), [".iso"] = ("💿", Color.FromArgb(100, 116, 139)),
-        [".txt"] = ("📝", Color.FromArgb(59, 130, 246)), [".md"] = ("📝", Color.FromArgb(59, 130, 246)), [".log"] = ("📝", Color.FromArgb(59, 130, 246)),
-        [".js"] = ("💻", Color.FromArgb(20, 184, 166)), [".cs"] = ("💻", Color.FromArgb(20, 184, 166)), [".py"] = ("💻", Color.FromArgb(20, 184, 166)), [".html"] = ("🌐", Color.FromArgb(20, 184, 166)), [".css"] = ("💻", Color.FromArgb(20, 184, 166)), [".json"] = ("💻", Color.FromArgb(20, 184, 166)), [".bat"] = ("💻", Color.FromArgb(20, 184, 166)),
-        [".pdf"] = ("📕", Color.FromArgb(220, 38, 38)), [".docx"] = ("📘", Color.FromArgb(37, 99, 235)), [".xlsx"] = ("📗", Color.FromArgb(22, 163, 74)), [".pptx"] = ("📙", Color.FromArgb(234, 88, 12)),
-    };
-    public static Bitmap IconFor(string p)
-    {
-        if (Directory.Exists(p)) return Tile("📁", Color.FromArgb(245, 158, 11));
-        var ext = Path.GetExtension(p).ToLower();
-        if (kinds.TryGetValue(ext, out var k)) return Tile(k.Item1, k.Item2);
-        if (ext == ".exe" || ext == ".lnk") { try { using var i = Icon.ExtractAssociatedIcon(p)!; var bm = new Bitmap(64, 64); using var g = Graphics.FromImage(bm); g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.DrawImage(i.ToBitmap(), 4, 4, 56, 56); return bm; } catch { } }
-        return Tile("📄", Color.FromArgb(100, 116, 139));
-    }
+    public static Bitmap IconFor(string p) => Icons.ForFile(p);
     public static Bitmap? Load(string p) { try { using var i = Image.FromFile(p); return new Bitmap(i); } catch { return null; } }
     public static Bitmap Circle(Image src, int s)
     {
@@ -213,14 +186,22 @@ static class Program
 {
     static bool InsideArchive()
     {
-        try { var p = Environment.ProcessPath ?? ""; return p.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase) || p.Contains("Rar$", StringComparison.OrdinalIgnoreCase); }
+        try
+        {
+            var p = Environment.ProcessPath ?? ""; var t = Path.GetTempPath();
+            return p.StartsWith(t, StringComparison.OrdinalIgnoreCase) || p.Contains("Rar$", StringComparison.OrdinalIgnoreCase) || p.Contains(".zip\\", StringComparison.OrdinalIgnoreCase);
+        }
         catch { return false; }
     }
     [STAThread]
     static void Main()
     {
         ApplicationConfiguration.Initialize();
-        if (InsideArchive()) { MessageBox.Show("Launcher.exe is running from inside the zip file.\n\nRight-click the zip, choose Extract All, then open Launcher.exe from the extracted folder (or copy it onto your USB drive first).", "USB Desktop"); return; }
+        if (InsideArchive())
+        {
+            MessageBox.Show("It looks like Launcher.exe is being run from inside the zip file.\n\nRight-click the zip, choose Extract All, then open Launcher.exe from the extracted folder (or copy it onto your USB drive first).", "USB Desktop");
+            return;
+        }
         try { foreach (var d in new[] { Paths.Desktop, Paths.Apps, Paths.Data, Paths.Vm, Paths.Bin, Paths.Shots }) Directory.CreateDirectory(d); }
         catch (Exception ex) { MessageBox.Show("This location is read-only, so USB Desktop can't set itself up here.\n\nMove Launcher.exe to a normal folder or your USB drive.\n\n" + ex.Message, "USB Desktop"); return; }
         Native.Prepare();
@@ -260,26 +241,31 @@ class LoginForm : Form
 
         clock.Font = new Font("Segoe UI Light", 54); clock.ForeColor = white; clock.BackColor = Color.Transparent; clock.AutoSize = true;
         date.Font = Ui.F(15); date.ForeColor = soft; date.BackColor = Color.Transparent; date.AutoSize = true;
-        Tick(); clock.Location = new Point(Ui.D(44), Ui.D(24)); date.Location = new Point(Ui.D(50), clock.Bottom - Ui.D(4));
+        Tick(); clock.Location = new Point(Ui.D(44), Ui.D(24)); date.Location = new Point(Ui.D(50), clock.Bottom - Ui.D(2));
         Controls.Add(clock); Controls.Add(date);
 
-        int cw = Ui.D(400); col.Size = new Size(cw, Ui.D(400)); col.BackColor = Color.Transparent;
-        int a = Ui.D(150); av.Bounds = new Rectangle((cw - a) / 2, 0, a, a); av.BackColor = Color.Transparent; av.SizeMode = PictureBoxSizeMode.Zoom; av.Image = U.Avatar(a);
+        int cw = Ui.D(420), a = Ui.D(136), gap = Ui.D(14);
+        col.BackColor = Color.Transparent;
+        av.Bounds = new Rectangle((cw - a) / 2, 0, a, a); av.BackColor = Color.Transparent; av.SizeMode = PictureBoxSizeMode.Zoom; av.Image = U.Avatar(a);
         if (first) { av.Cursor = Cursors.Hand; av.Click += (_, _) => { using var d = new OpenFileDialog { Filter = "Images|*.png;*.jpg;*.jpeg;*.bmp" }; if (d.ShowDialog() == DialogResult.OK && U.SetAvatar(d.FileName)) av.Image = U.Avatar(a); }; }
-        name.Font = new Font("Segoe UI Light", 24); name.ForeColor = white; name.BackColor = Color.Transparent; name.TextAlign = ContentAlignment.MiddleCenter; name.Text = Cfg.Get("name", Environment.UserName); name.SetBounds(0, Ui.D(166), cw, Ui.D(52));
+        int y = a + gap;
+        name.Font = new Font("Segoe UI Light", 22); name.ForeColor = white; name.BackColor = Color.Transparent; name.TextAlign = ContentAlignment.MiddleCenter; name.AutoEllipsis = true; name.Text = Cfg.Get("name", Environment.UserName);
+        var nh = TextRenderer.MeasureText("Ag", name.Font).Height + Ui.D(8); name.SetBounds(0, y, cw, nh); y += nh + Ui.D(4);
         hint.Font = Ui.F(10.5f); hint.ForeColor = soft; hint.BackColor = Color.Transparent; hint.TextAlign = ContentAlignment.TopCenter;
-        hint.Text = first ? "Welcome! Click the circle to add a photo, then create a password" : "Enter your password to continue"; hint.SetBounds(Ui.D(10), Ui.D(222), cw - Ui.D(20), Ui.D(46));
+        hint.Text = first ? "Welcome! Click the circle to add a photo, then create a password" : "Enter your password to continue";
+        var hh = TextRenderer.MeasureText(hint.Text, hint.Font, new Size(cw - Ui.D(40), 0), TextFormatFlags.WordBreak | TextFormatFlags.NoPadding).Height + Ui.D(6); hint.SetBounds(Ui.D(20), y, cw - Ui.D(40), hh); y += hh + gap;
 
-        var (box, tb) = Ui.Input("Password", true, 50); pass = tb; box.Floating = true; box.Fill = Color.FromArgb(40, 42, 70); tb.BackColor = box.Fill; box.SetBounds(Ui.D(30), Ui.D(276), cw - Ui.D(60), Ui.D(50));
-        go.Text = "→"; go.Pill = true; go.BackColor = Theme.Accent; go.Font = Ui.F(13, true); box.Controls.Add(go);
-        void Lay() { go.SetBounds(box.Width - Ui.D(44), Ui.D(5), Ui.D(40), box.Height - Ui.D(10)); tb.Width = box.Width - Ui.D(18) - Ui.D(54); }
+        var (box, tb) = Ui.Input("Password", true, 52); pass = tb; box.Floating = true; box.Fill = Color.FromArgb(44, 46, 76); tb.BackColor = box.Fill; box.SetBounds(Ui.D(30), y, cw - Ui.D(60), Ui.D(52)); y += Ui.D(52) + Ui.D(8);
+        go.Glyph = "fwd"; go.GlyphScale = 0.4f; go.Pill = true; go.BackColor = Theme.Accent; box.Controls.Add(go);
+        void Lay() { go.SetBounds(box.Width - Ui.D(46), Ui.D(6), Ui.D(40), box.Height - Ui.D(12)); tb.Width = box.Width - Ui.D(22) - Ui.D(54); tb.Left = Ui.D(20); }
         box.Resize += (_, _) => Lay(); Lay();
         go.Click += (_, _) => Submit();
-        err.Font = Ui.F(10); err.ForeColor = Color.FromArgb(255, 150, 150); err.BackColor = Color.Transparent; err.TextAlign = ContentAlignment.MiddleCenter; err.SetBounds(0, Ui.D(336), cw, Ui.D(30));
+        err.Font = Ui.F(10); err.ForeColor = Color.FromArgb(255, 150, 150); err.BackColor = Color.Transparent; err.TextAlign = ContentAlignment.MiddleCenter; err.SetBounds(0, y, cw, Ui.D(28)); y += Ui.D(30);
+        col.Size = new Size(cw, y);
         col.Controls.AddRange(new Control[] { av, name, hint, box, err }); Controls.Add(col);
 
-        var usb = new Label { Text = "💾  Running from " + Path.GetPathRoot(Paths.Root), ForeColor = soft, BackColor = Color.Transparent, Font = Ui.F(10), AutoSize = true };
-        var off = new RoundButton { Text = "⏻", Font = Ui.F(14), Pill = true, OnImage = true, BackColor = Color.FromArgb(46, 48, 80), Size = Ui.D(50, 50) };
+        var usb = new Label { Text = "Running from " + Path.GetPathRoot(Paths.Root), ForeColor = soft, BackColor = Color.Transparent, Font = Ui.F(10), AutoSize = true };
+        var off = new RoundButton { Glyph = "power", GlyphScale = 0.42f, Pill = true, OnImage = true, BackColor = Color.FromArgb(52, 54, 90), Size = Ui.D(50, 50) };
         off.Click += (_, _) => DialogResult = DialogResult.Cancel;
         Controls.Add(usb); Controls.Add(off);
         Resize += (_, _) =>

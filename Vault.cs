@@ -32,22 +32,20 @@ static class VaultApp
 
     public static Control View(DesktopForm sh)
     {
-        var p = new Panel { BackColor = Color.White };
+        var p = new Panel { BackColor = Ui.Surface };
         p.Disposed += (_, _) => Clear();
-        void Build() { p.Controls.Clear(); if (key == null) Locked(); else Unlocked(); }
+        void Build() { foreach (Control c in p.Controls.Cast<Control>().ToList()) { p.Controls.Remove(c); c.Dispose(); } if (key == null) Locked(); else Unlocked(); Ui.Skin(p); Ui.Fit(p); }
 
         void Locked()
         {
             bool exists = File.Exists(Path.Combine(Dir, "index.enc"));
-            Label L(string t, int y, float sz = 10, bool b = false) { var l = new Label { Text = t, Location = new Point(24, y), AutoSize = true, MaximumSize = new Size(560, 0), Font = new Font("Segoe UI", sz, b ? FontStyle.Bold : FontStyle.Regular) }; p.Controls.Add(l); return l; }
-            L("🔐  Private Vault", 18, 18, true);
-            L(exists ? "Enter your vault password." : "Create a vault password. It's separate from your login. If you forget it, the files can't be recovered.", 70);
-            var pw = new TextBox { Bounds = new Rectangle(24, 130, 300, 30), UseSystemPasswordChar = true, Font = new Font("Segoe UI", 11) }; p.Controls.Add(pw);
-            TextBox? c2 = null;
-            if (!exists) { c2 = new TextBox { Bounds = new Rectangle(24, 170, 300, 30), UseSystemPasswordChar = true, Font = new Font("Segoe UI", 11), PlaceholderText = "Confirm password" }; p.Controls.Add(c2); }
-            var msg = L("", exists ? 224 : 270);
-            var go = new RoundButton { Text = exists ? "Unlock" : "Create vault", Bounds = new Rectangle(24, exists ? 174 : 214, 150, 36), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White };
-            go.Click += (_, _) =>
+            var pg = new PagePanel(); pg.H("Private Vault");
+            pg.P(exists ? "Enter your vault password." : "Create a vault password. It's separate from your login. If you forget it, the files can't be recovered.", true);
+            var r1 = pg.Row(10); var (_, pw) = pg.Field(r1, "Vault password", 320, true);
+            TextBox? c2 = null; if (!exists) { var r2 = pg.Row(2); var (_, t2) = pg.Field(r2, "Confirm password", 320, true); c2 = t2; }
+            var msg = pg.P("", false, false, 10); msg.ForeColor = Color.FromArgb(255, 150, 150);
+            var r3 = pg.Row(4);
+            var go = pg.Btn(r3, exists ? "Unlock" : "Create vault", () =>
             {
                 try
                 {
@@ -58,9 +56,9 @@ static class VaultApp
                 }
                 catch (CryptographicException) { Clear(); msg.Text = "Wrong password"; }
                 catch (Exception ex) { Clear(); msg.Text = ex.Message; }
-            };
+            });
             pw.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { go.PerformClick(); e.SuppressKeyPress = true; } };
-            p.Controls.Add(go);
+            p.Controls.Add(pg);
         }
 
         void Unlocked()
@@ -78,7 +76,7 @@ static class VaultApp
                 }
             }
             Button B(string t, Action a) { var b = new RoundButton { Text = t, AutoSize = true, Height = 30 }; b.Click += (_, _) => a(); top.Controls.Add(b); return b; }
-            B("➕ Add files", () =>
+            B("Add files", () =>
             {
                 using var d = new OpenFileDialog { Multiselect = true }; if (d.ShowDialog() != DialogResult.OK) return;
                 foreach (var f in d.FileNames)
@@ -95,7 +93,7 @@ static class VaultApp
                 SaveIndex(); Fill();
                 if (MessageBox.Show("Delete the original files now?", "Vault", MessageBoxButtons.YesNo) == DialogResult.Yes) foreach (var f in d.FileNames) try { File.Delete(f); } catch { }
             });
-            B("⬇ Export", () =>
+            B("Export", () =>
             {
                 if (lv.SelectedItems.Count == 0) return;
                 using var d = new FolderBrowserDialog { SelectedPath = Paths.Desktop }; if (d.ShowDialog() != DialogResult.OK) return;
@@ -103,13 +101,13 @@ static class VaultApp
                     try { File.WriteAllBytes(U.Unique(d.SelectedPath, it.Text), Dec(File.ReadAllBytes(Path.Combine(Dir, (string)it.Tag! + ".enc")))); } catch (Exception ex) { sh.Toast(ex.Message); }
                 sh.Reload(); sh.Toast("Exported " + lv.SelectedItems.Count + " file(s)");
             });
-            B("🗑 Delete", () =>
+            B("Delete", () =>
             {
                 if (lv.SelectedItems.Count == 0 || MessageBox.Show("Delete from the vault for good?", "Vault", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
                 foreach (ListViewItem it in lv.SelectedItems) { try { File.Delete(Path.Combine(Dir, (string)it.Tag! + ".enc")); } catch { } idx.Remove(it.Text); }
                 SaveIndex(); Fill();
             });
-            B("🔒 Lock", () => { Clear(); Build(); });
+            B("Lock", () => { Clear(); Build(); });
             p.Controls.Add(lv); p.Controls.Add(top); Fill();
         }
         Build(); return p;
