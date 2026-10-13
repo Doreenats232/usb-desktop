@@ -272,16 +272,6 @@ input:hover,input:focus{box-shadow:0 2px 12px rgba(32,33,36,.26);border-color:tr
                 c.FaviconChanged += async (_, _) => { try { using var s = await c.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png); if (s != null) { using var im = Image.FromStream(s); ti.Icon = new Bitmap(im); tabs.Invalidate(); } } catch { } };
                 c.NewWindowRequested += (_, e) => { e.Handled = true; AddTab(e.Uri); };
                 c.ProcessFailed += (_, _) => { try { c.Reload(); } catch { } };
-                try
-                {
-                    wv.CoreWebView2Controller.AcceleratorKeyPressed += (_, e) =>
-                    {
-                        if (e.KeyEventKind != CoreWebView2KeyEventKind.KeyDown && e.KeyEventKind != CoreWebView2KeyEventKind.SystemKeyDown) return;
-                        var k = (Keys)e.VirtualKey; bool ctrl = (Control.ModifierKeys & Keys.Control) != 0;
-                        if ((ctrl && (k == Keys.T || k == Keys.W || k == Keys.L)) || k == Keys.F5) { e.Handled = true; Key(k, ctrl); }
-                    };
-                }
-                catch { }
                 var anim = new System.Windows.Forms.Timer { Interval = 60 }; anim.Tick += (_, _) => { if (ti.Loading) tabs.Invalidate(); }; anim.Start(); wv.Disposed += (_, _) => anim.Dispose();
                 if (u == "") c.NavigateToString(NewTabHtml()); else c.Navigate(Norm(u));
             }
