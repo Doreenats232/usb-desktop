@@ -101,6 +101,13 @@ class Win : Panel
     }
     void Hook(Control c) { c.MouseDown += (_, _) => Raise(); foreach (Control k in c.Controls) Hook(k); }
     public void Raise() { BringToFront(); Raised?.Invoke(this); }
+    public void Pop()
+    {
+        var end = Location; int n = 0; Location = new Point(end.X, end.Y + Ui.D(22));
+        var t = new System.Windows.Forms.Timer { Interval = 15 };
+        t.Tick += (_, _) => { n++; double k = 1 - Math.Pow(1 - n / 9.0, 3); Location = new Point(end.X, end.Y + (int)(Ui.D(22) * (1 - k))); if (n >= 9) { t.Stop(); t.Dispose(); Location = end; } };
+        t.Start();
+    }
     void SnapTo(int side) { if (!snapped && !max) rest = Bounds; snapped = true; max = false; mx.Glyph = "max"; Bounds = new Rectangle(side == 0 ? 0 : Parent!.Width / 2, 0, Parent!.Width / 2, Parent.Height); grip.BringToFront(); }
     public void Toggle()
     {
@@ -313,7 +320,7 @@ class DesktopForm : Form
         w.Closed = _ => BeginInvoke(new Action(() => { bar.Controls.Remove(b); b.Dispose(); wins.RemoveAll(x => x.w == w); desk.Controls.Remove(w); w.Dispose(); LayoutBar(); Sync(); desk.Invalidate(); }));
         w.Minned = _ => { w.Visible = false; Sync(); desk.Invalidate(); };
         w.Raised = _ => { HideMenu(); Sync(); };
-        LayoutBar(); Sync(); return w;
+        LayoutBar(); Sync(); w.Pop(); return w;
     }
 
     public void OpenFile(string p)
