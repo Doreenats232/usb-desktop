@@ -8,6 +8,7 @@ static class Ui
     public static readonly float S = Dpi();
     static float Dpi() { try { using var g = Graphics.FromHwnd(IntPtr.Zero); return Math.Max(1f, g.DpiX / 96f); } catch { return 1f; } }
     public static int D(int v) => (int)Math.Round(v * S);
+    public static int Unscale(int v) => (int)Math.Round(v / S);
     public static Size D(int w, int h) => new(D(w), D(h));
     public static Font F(float pt, bool bold = false) => new("Segoe UI", pt, bold ? FontStyle.Bold : FontStyle.Regular);
     public static readonly Color Bg = Color.FromArgb(14, 15, 28), Surface = Color.FromArgb(23, 24, 41), Surface2 = Color.FromArgb(34, 36, 58),

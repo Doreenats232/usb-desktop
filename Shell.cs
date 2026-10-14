@@ -60,12 +60,13 @@ class Win : Panel
     readonly Label tl = new(); readonly PictureBox ico = new();
     readonly RoundButton cl, mx, mn;
     bool max, drag, rs, snapped; Point dn, st, rdn; Size rsz; Rectangle rest, last;
-    public bool IsMax => max;
+    public bool IsMax => max; public string Kind = ""; public string? Arg; public Control Content = null!;
+    public Rectangle RestBounds => (max || snapped) ? rest : Bounds;
 
     RoundButton Tb(string glyph, Color hover) => new() { Glyph = glyph, BackColor = bar.BackColor, Hover = hover, Radius = 8, GlyphScale = 0.34f };
     public Win(string title, string icon, Control content, Size sz)
     {
-        Title = title; Size = sz; Padding = new Padding(1); BackColor = Ui.Line; DoubleBuffered = true;
+        Title = title; Content = content; Size = sz; Padding = new Padding(1); BackColor = Ui.Line; DoubleBuffered = true;
         bar.Dock = DockStyle.Top; bar.Height = Ui.D(40); bar.BackColor = Color.FromArgb(20, 21, 38);
         bar.Paint += (_, e) => { using var lg = new LinearGradientBrush(new Rectangle(0, 0, Math.Max(2, bar.Width), Ui.D(3)), Ui.Accent, Ui.Accent2, 0f); e.Graphics.FillRectangle(lg, 0, 0, bar.Width, Ui.D(3)); };
         ico.Image = Icons.Scaled(Icons.App(icon), Ui.D(24)); ico.SizeMode = PictureBoxSizeMode.Zoom; ico.BackColor = Color.Transparent;
@@ -180,9 +181,11 @@ class DesktopForm : Form
         KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) HideMenu(); };
         tm.Tick += (_, _) => Tick(); tm.Start();
         Load += (_, _) => { ApplyLook(); ApplyWidgets(); LayoutBar(); Tick(); };
+        FormClosing += (_, _) => { if (Cfg.Get("sleep", "0") == "1") SaveState(); };
         Shown += async (_, _) =>
         {
             var sp = new Splash(ClientSize); Controls.Add(sp); sp.BringToFront(); Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " ");
+            await Task.Delay(400); RestoreSession();
             try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { Toast("Update 1.0." + u.latest + " is available"); await Updater.Run(u.latest, u.url, true); } } catch { }
         };
     }
@@ -331,20 +334,21 @@ class DesktopForm : Form
         if (new[] { ".txt", ".md", ".json", ".js", ".cs", ".log", ".ini", ".html", ".css", ".py", ".bat" }.Contains(ext)) Launch("notepad", p); else U.Open(p);
     }
 
+    Win T(string k, string? arg, Win w) { w.Kind = k; w.Arg = arg; return w; }
     public void Launch(string k, string? arg = null)
     {
         HideMenu();
         switch (k)
         {
-            case "files": AddWin("Files", "folder", Views.Files(this, arg ?? Paths.Root), new Size(800, 520)); break;
-            case "notepad": AddWin(arg == null ? "Notepad" : Path.GetFileName(arg), "notepad", Views.Notepad(this, arg), new Size(680, 460)); break;
-            case "calc": AddWin("Calculator", "calc", Views.Calc(), new Size(330, 490)); break;
-            case "paint": AddWin("Paint", "paint", Views.PaintApp(this), new Size(860, 580)); break;
-            case "term": AddWin("Terminal", "term", Views.Term(), new Size(720, 440)); break;
-            case "web": AddWin("Browser", "browser", Web.Browser(this, arg), new Size(1040, 660)); break;
-            case "store": AddWin("MLD Store", "store", Web.Store(this), new Size(1040, 660)); break;
-            case "tm": AddWin("Task Manager", "tm", Tools.TaskMgr(this), new Size(640, 480)); break;
-            case "photo": if (arg != null) AddWin(Path.GetFileName(arg), "photo", Tools.Photo(arg), new Size(780, 560)); break;
+            case "files": T(k, arg, AddWin("Files", "folder", Views.Files(this, arg ?? Paths.Root), new Size(800, 520))); break;
+            case "notepad": T(k, arg, AddWin(arg == null ? "Notepad" : Path.GetFileName(arg), "notepad", Views.Notepad(this, arg), new Size(680, 460))); break;
+            case "calc": T(k, arg, AddWin("Calculator", "calc", Views.Calc(), new Size(330, 490))); break;
+            case "paint": T(k, arg, AddWin("Paint", "paint", Views.PaintApp(this), new Size(860, 580))); break;
+            case "term": T(k, arg, AddWin("Terminal", "term", Views.Term(), new Size(720, 440))); break;
+            case "web": T(k, arg, AddWin("Browser", "browser", Web.Browser(this, arg), new Size(1040, 660))); break;
+            case "store": T(k, arg, AddWin("MLD Store", "store", Web.Store(this), new Size(1040, 660))); break;
+            case "tm": T(k, arg, AddWin("Task Manager", "tm", Tools.TaskMgr(this), new Size(640, 480))); break;
+            case "photo": if (arg != null) T(k, arg, AddWin(Path.GetFileName(arg), "photo", Tools.Photo(arg), new Size(780, 560))); break;
             case "shot": Shot(); break;
             case "bin":
             case "vault":
@@ -352,10 +356,10 @@ class DesktopForm : Form
             case "settings":
                 var title = k == "bin" ? "Recycle Bin" : k == "vm" ? "Full OS" : k == "vault" ? "Private Vault" : "Settings"; var ex = wins.FirstOrDefault(x => x.w.Title == title).w;
                 if (ex != null) { ex.Visible = true; ex.BringToFront(); Sync(); }
-                else if (k == "bin") AddWin(title, "bin", Views.BinView(this), new Size(640, 440));
-                else if (k == "vault") AddWin(title, "vault", VaultApp.View(this), new Size(700, 480));
-                else if (k == "vm") AddWin(title, "vm", VmApp.View(this), new Size(760, 580));
-                else AddWin(title, "settings", Views.Settings(this, int.TryParse(arg, out var pg) ? pg : 0), new Size(940, 640));
+                else if (k == "bin") T(k, arg, AddWin(title, "bin", Views.BinView(this), new Size(640, 440)));
+                else if (k == "vault") T(k, arg, AddWin(title, "vault", VaultApp.View(this), new Size(700, 480)));
+                else if (k == "vm") T(k, arg, AddWin(title, "vm", VmApp.View(this), new Size(760, 580)));
+                else T(k, arg, AddWin(title, "settings", Views.Settings(this, int.TryParse(arg, out var pg) ? pg : 0), new Size(940, 640)));
                 break;
         }
     }
@@ -379,13 +383,47 @@ class DesktopForm : Form
         mName.Bounds = new Rectangle(Ui.D(76), Ui.D(536), Ui.D(250), Ui.D(44)); mName.ForeColor = Ui.Text; mName.Font = Ui.F(11); mName.TextAlign = ContentAlignment.MiddleLeft; mName.BackColor = Color.Transparent;
         var pw = new RoundButton { Glyph = "power", GlyphScale = 0.42f, Bounds = new Rectangle(Ui.D(374), Ui.D(536), Ui.D(50), Ui.D(44)), Pill = true };
         var pm = new ContextMenuStrip();
-        pm.Items.Add("Lock", null, (_, _) => { HideMenu(); Lock(); }); pm.Items.Add("Shut down", null, (_, _) => Application.Exit());
+        pm.Items.Add("Lock", null, (_, _) => { HideMenu(); Lock(); }); pm.Items.Add("Sleep (resume on any PC)", null, (_, _) => SleepNow()); pm.Items.Add("Shut down", null, (_, _) => Application.Exit());
         pw.Click += (_, _) => pm.Show(pw, new Point(0, 0), ToolStripDropDownDirection.AboveLeft);
         menu.Controls.AddRange(new Control[] { sb, pl, grid, mAv, mName, pw }); pwBtn = pw; Ui.Dark(grid); Controls.Add(menu);
     }
     void ShowMenu() { quick.Visible = false; msearch.Text = ""; menu.Height = Math.Min(Ui.D(600), Height - bar.Height - Ui.D(24)); grid.Height = menu.Height - Ui.D(190); int uy = menu.Height - Ui.D(64); mAv.Top = uy; mName.Top = uy; if (pwBtn != null) pwBtn.Top = uy; menu.Location = new Point(Ui.D(10), Height - bar.Height - menu.Height - Ui.D(10)); mAv.Image = U.Avatar(Ui.D(44)); mName.Text = Cfg.Get("name", Environment.UserName); menu.Visible = true; menu.BringToFront(); }
     void HideMenu() { menu.Visible = false; quick.Visible = false; }
     void ToggleQuick() { if (quick.Visible) { quick.Visible = false; return; } menu.Visible = false; quick.Refresh2(); quick.Location = new Point(Width - quick.Width - Ui.D(10), Height - bar.Height - quick.Height - Ui.D(10)); quick.Visible = true; quick.BringToFront(); }
+    bool SaveState()
+    {
+        if (Session.AlreadySaved) return true; var l = new List<WinState>();
+        foreach (var (w, _) in wins)
+        {
+            if (w.Kind == "") continue; var r = w.RestBounds;
+            var st = new WinState { Kind = w.Kind, Arg = w.Arg, X = Ui.Unscale(r.X), Y = Ui.Unscale(r.Y), W = Ui.Unscale(r.Width), H = Ui.Unscale(r.Height), Max = w.IsMax, Hidden = !w.Visible };
+            if (w.Content.Tag is BrowserApi api) st.Tabs = api.Urls();
+            l.Add(st);
+        }
+        return Session.Save(l);
+    }
+    public async void SleepNow()
+    {
+        HideMenu(); Toast("Going to sleep…");
+        try { await Web.FlushAll(); } catch { }
+        if (!SaveState()) { Toast("Couldn't save your session"); return; }
+        await Task.Delay(500); Application.Exit();
+    }
+    async void RestoreSession()
+    {
+        var l = Session.Load(); if (l == null || l.Count == 0) return;
+        foreach (var s in l)
+        {
+            try
+            {
+                int before = wins.Count; Launch(s.Kind, s.Kind == "web" ? s.Tabs?.FirstOrDefault() ?? s.Arg : s.Arg); if (wins.Count == before) continue;
+                var w = wins[^1].w; w.Bounds = new Rectangle(Ui.D(s.X), Ui.D(s.Y), Ui.D(s.W), Ui.D(s.H)); if (s.Max) w.Toggle(); if (s.Hidden) w.Visible = false;
+                if (s.Kind == "web" && s.Tabs != null && s.Tabs.Count > 1 && w.Content.Tag is BrowserApi api) { await Task.Delay(900); foreach (var u in s.Tabs.Skip(1)) api.Open(u); }
+            }
+            catch { }
+        }
+        Session.Clear(); Sync(); desk.Invalidate(); Toast("Welcome back. Picked up where you left off.");
+    }
     void Lock() { if (locking) return; locking = true; try { using var l = new LoginForm(); l.ShowDialog(); } finally { locking = false; lastInput = DateTime.Now; } }
 
     public void ApplyWidgets()

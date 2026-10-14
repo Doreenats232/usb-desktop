@@ -282,9 +282,9 @@ class LoginForm : Form
     void Submit()
     {
         if (pass.Text.Length < 1) { err.Text = "Type a password"; return; }
-        if (first) { File.WriteAllText(uf, U.MakeHash(pass.Text)); DialogResult = DialogResult.OK; return; }
+        if (first) { File.WriteAllText(uf, U.MakeHash(pass.Text)); Session.SetKey(pass.Text); DialogResult = DialogResult.OK; return; }
         var st = File.ReadAllText(uf).Trim();
-        if (U.Check(pass.Text, st)) { if (!st.StartsWith("v2:")) File.WriteAllText(uf, U.MakeHash(pass.Text)); DialogResult = DialogResult.OK; }
+        if (U.Check(pass.Text, st)) { if (!st.StartsWith("v2:")) File.WriteAllText(uf, U.MakeHash(pass.Text)); Session.SetKey(pass.Text); DialogResult = DialogResult.OK; }
         else
         {
             fails++; err.Text = fails >= 3 ? "Too many tries. Wait a few seconds..." : "Wrong password, try again"; pass.SelectAll();

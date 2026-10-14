@@ -276,6 +276,8 @@ static class Views
                 {
                     pg.H("Security"); pg.P("Auto-lock after being idle (minutes, 0 = off)", false, false, 11); var r = pg.Row(4); pg.Num(r, 0, 240, Cfg.Int("idle", 10), 1, v => Cfg.Set("idle", v.ToString()));
                     pg.Switch("Close the desktop when the USB is removed", Cfg.Get("usbwatch", "1") == "1", on => Cfg.Set("usbwatch", on ? "1" : "0"));
+                    pg.Switch("Sleep instead of shut down (resume on any PC)", Cfg.Get("sleep", "0") == "1", on => Cfg.Set("sleep", on ? "1" : "0"));
+                    pg.P("Sleep saves your open windows and browser tabs, encrypted with your login password, and brings them back the next time you sign in, on any computer. Apps already open on the PC itself (like its own Chrome) can't be saved.", true, false, 10, 6);
                     pg.P("Passwords are salted and hashed (PBKDF2). Change yours in Accounts.", true, false, 10, 12);
                     break;
                 }
