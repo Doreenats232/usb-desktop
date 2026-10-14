@@ -234,6 +234,7 @@ static class Views
                     pg.Switch("Show desktop icons", Cfg.Get("icons", "1") == "1", on => { Cfg.Set("icons", on ? "1" : "0"); sh.Reload(); });
                     pg.Switch("24-hour clock", Cfg.Get("h24", "1") == "1", on => Cfg.Set("h24", on ? "1" : "0"));
                     pg.Switch("Show clock widget", Cfg.Get("wclock", "1") == "1", on => { Cfg.Set("wclock", on ? "1" : "0"); sh.ApplyWidgets(); });
+                    pg.Switch("Show the companion when I open the desktop", Cfg.Get("companion", "1") == "1", on => Cfg.Set("companion", on ? "1" : "0"));
                     pg.Switch("Show sticky note", Cfg.Get("wnote", "1") == "1", on => { Cfg.Set("wnote", on ? "1" : "0"); sh.ApplyWidgets(); });
                     break;
                 }

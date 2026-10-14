@@ -185,7 +185,7 @@ class DesktopForm : Form
         Shown += async (_, _) =>
         {
             var sp = new Splash(ClientSize); Controls.Add(sp); sp.BringToFront(); Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " ");
-            await Task.Delay(400); RestoreSession();
+            await Task.Delay(400); RestoreSession(); if (Cfg.Get("companion", "1") == "1") { try { Companion.Greet(); } catch { } }
             try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { Toast("Update 1.0." + u.latest + " is available"); await Updater.Run(u.latest, u.url, true); } } catch { }
         };
     }
@@ -195,12 +195,32 @@ class DesktopForm : Form
         bool h24 = Cfg.Get("h24", "1") == "1";
         wclock?.Invalidate(); var im = Cfg.Int("idle", 10);
         if (im > 0 && !locking && DateTime.Now - lastInput > TimeSpan.FromMinutes(im)) Lock();
-        if (Cfg.Get("usbwatch", "1") == "1" && !Directory.Exists(Paths.Root)) Application.Exit();
+        if (Cfg.Get("usbwatch", "1") == "1") UsbCheck();
         clock.Text = DateTime.Now.ToString(h24 ? "HH:mm" : "h:mm tt") + "\n" + DateTime.Now.ToString("dd/MM/yyyy");
         var ps = SystemInformation.PowerStatus;
         tray.Battery = ps.BatteryChargeStatus != BatteryChargeStatus.NoSystemBattery && ps.BatteryLifePercent <= 1 ? (int)(ps.BatteryLifePercent * 100) : -1;
     }
 
+    Panel? gone;
+    void UsbCheck()
+    {
+        bool here = Directory.Exists(Paths.Root);
+        if (!here && gone == null)
+        {
+            gone = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(14, 15, 30) }; var l = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White, Font = Ui.F(18, true), Text = "USB removed\n\nPlug it back in to keep going.\nYour session is paused." };
+            gone.Controls.Add(l); Controls.Add(gone); gone.BringToFront();
+        }
+        else if (here && gone != null) { Controls.Remove(gone); gone.Dispose(); gone = null; Toast("Welcome back. USB reconnected."); }
+    }
+    public async void EjectNow()
+    {
+        HideMenu(); Toast("Saving everything before eject…");
+        try { await Web.FlushAll(); } catch { }
+        if (VmApp.Running) await Task.Run(VmApp.Freeze);
+        SaveState(); await Task.Delay(500);
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("rundll32.exe", "shell32.dll,Control_RunDLL hotplug.dll") { UseShellExecute = true }); } catch { }
+        Application.Exit();
+    }
     void LayoutBar()
     {
         int h = bar.Height, pad = Ui.D(8), bh = h - 2 * pad;
@@ -383,7 +403,7 @@ class DesktopForm : Form
         mName.Bounds = new Rectangle(Ui.D(76), Ui.D(536), Ui.D(250), Ui.D(44)); mName.ForeColor = Ui.Text; mName.Font = Ui.F(11); mName.TextAlign = ContentAlignment.MiddleLeft; mName.BackColor = Color.Transparent;
         var pw = new RoundButton { Glyph = "power", GlyphScale = 0.42f, Bounds = new Rectangle(Ui.D(374), Ui.D(536), Ui.D(50), Ui.D(44)), Pill = true };
         var pm = new ContextMenuStrip();
-        pm.Items.Add("Lock", null, (_, _) => { HideMenu(); Lock(); }); pm.Items.Add("Sleep (resume on any PC)", null, (_, _) => SleepNow()); pm.Items.Add("Shut down", null, (_, _) => Application.Exit());
+        pm.Items.Add("Lock", null, (_, _) => { HideMenu(); Lock(); }); pm.Items.Add("Sleep (resume on any PC)", null, (_, _) => SleepNow()); pm.Items.Add("Safe eject USB", null, (_, _) => EjectNow()); pm.Items.Add("Shut down", null, (_, _) => Application.Exit());
         pw.Click += (_, _) => pm.Show(pw, new Point(0, 0), ToolStripDropDownDirection.AboveLeft);
         menu.Controls.AddRange(new Control[] { sb, pl, grid, mAv, mName, pw }); pwBtn = pw; Ui.Dark(grid); Controls.Add(menu);
     }
