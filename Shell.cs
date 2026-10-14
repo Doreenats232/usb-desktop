@@ -398,6 +398,7 @@ class DesktopForm : Form
             if (w.Kind == "") continue; var r = w.RestBounds;
             var st = new WinState { Kind = w.Kind, Arg = w.Arg, X = Ui.Unscale(r.X), Y = Ui.Unscale(r.Y), W = Ui.Unscale(r.Width), H = Ui.Unscale(r.Height), Max = w.IsMax, Hidden = !w.Visible };
             if (w.Content.Tag is BrowserApi api) st.Tabs = api.Urls();
+            if (w.Content.Tag is StateApi sa) st.Data = sa.Get();
             l.Add(st);
         }
         return Session.Save(l);
@@ -417,7 +418,7 @@ class DesktopForm : Form
             try
             {
                 int before = wins.Count; Launch(s.Kind, s.Kind == "web" ? s.Tabs?.FirstOrDefault() ?? s.Arg : s.Arg); if (wins.Count == before) continue;
-                var w = wins[^1].w; w.Bounds = new Rectangle(Ui.D(s.X), Ui.D(s.Y), Ui.D(s.W), Ui.D(s.H)); if (s.Max) w.Toggle(); if (s.Hidden) w.Visible = false;
+                var w = wins[^1].w; w.Bounds = new Rectangle(Ui.D(s.X), Ui.D(s.Y), Ui.D(s.W), Ui.D(s.H)); if (s.Max) w.Toggle(); if (s.Hidden) w.Visible = false; if (s.Data != null && w.Content.Tag is StateApi sa2) sa2.Set(s.Data);
                 if (s.Kind == "web" && s.Tabs != null && s.Tabs.Count > 1 && w.Content.Tag is BrowserApi api) { await Task.Delay(900); foreach (var u in s.Tabs.Skip(1)) api.Open(u); }
             }
             catch { }

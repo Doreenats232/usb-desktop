@@ -6,8 +6,10 @@ namespace UsbDesktop;
 class WinState
 {
     public string Kind { get; set; } = ""; public string? Arg { get; set; } public List<string>? Tabs { get; set; }
-    public int X { get; set; } public int Y { get; set; } public int W { get; set; } public int H { get; set; } public bool Max { get; set; } public bool Hidden { get; set; }
+    public int X { get; set; } public int Y { get; set; } public int W { get; set; } public int H { get; set; } public bool Max { get; set; } public bool Hidden { get; set; } public string? Data { get; set; }
 }
+
+class StateApi { public Func<string?> Get = () => null; public Action<string> Set = _ => { }; }
 
 class BrowserApi { public Func<List<string>> Urls = () => new(); public Action<string> Open = _ => { }; }
 

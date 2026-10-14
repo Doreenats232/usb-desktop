@@ -30,6 +30,7 @@ static class Views
         file.DropDownItems.Add("Save as…", null, (_, _) => Save(true));
         ms.Items.Add(file); p.Controls.Add(tb); p.Controls.Add(ms);
         tb.KeyDown += (_, e) => { if (e.Control && e.KeyCode == Keys.S) { Save(false); e.SuppressKeyPress = true; } };
+        p.Tag = new StateApi { Get = () => System.Text.Json.JsonSerializer.Serialize(new[] { cur ?? "", tb.Text }), Set = d => { try { var a = System.Text.Json.JsonSerializer.Deserialize<string[]>(d)!; cur = a[0] == "" ? null : a[0]; tb.Text = a[1]; } catch { } } };
         return p;
     }
 
@@ -109,7 +110,7 @@ static class Views
             using var pen = new Pen(col, size) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
             g.DrawLine(pen, last.Value, e.Location); last = e.Location; pb.Invalidate();
         };
-        p.Controls.Add(pb); p.Controls.Add(tools); return p;
+        p.Controls.Add(pb); p.Controls.Add(tools); p.Tag = new StateApi { Get = () => { try { using var ms = new MemoryStream(); bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png); return Convert.ToBase64String(ms.ToArray()); } catch { return null; } }, Set = d => { try { using var im = Image.FromStream(new MemoryStream(Convert.FromBase64String(d))); using var g = Graphics.FromImage(bmp); g.Clear(Color.White); g.DrawImage(im, 0, 0, im.Width, im.Height); pb.Invalidate(); } catch { } } }; return p;
     }
 
     public static Control BinView(DesktopForm sh)
@@ -184,7 +185,7 @@ static class Views
         });
         m.Items.Add("Refresh", null, (_, _) => Go(cur)); lv.ContextMenuStrip = m;
         lv.KeyDown += (_, e) => { if (e.Control && e.KeyCode == Keys.C) Sel(false); else if (e.Control && e.KeyCode == Keys.X) Sel(true); else if (e.Control && e.KeyCode == Keys.V) Paste(); };
-        p.Controls.Add(lv); p.Controls.Add(top); Go(start); return p;
+        p.Controls.Add(lv); p.Controls.Add(top); Go(start); p.Tag = new StateApi { Get = () => cur, Set = d => { try { if (Directory.Exists(d)) Go(d); } catch { } } }; return p;
     }
 
     public static Control Settings(DesktopForm sh, int start)
