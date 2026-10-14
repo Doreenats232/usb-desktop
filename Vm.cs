@@ -1,10 +1,32 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.RegularExpressions;
 namespace UsbDesktop;
 
 static class VmApp
 {
     static Process? run;
+    const int MonPort = 45517;
+    static string FlagFile => Path.Combine(Paths.Vm, "frozen.txt");
+    public static bool Running => run is { HasExited: false };
+    public static bool Frozen => File.Exists(FlagFile);
+
+    // Saves the whole running Linux (memory + devices) into the disk image, then closes it. Returns an error text, or null on success.
+    public static string? Freeze()
+    {
+        if (!Running) return null;
+        try
+        {
+            using var c = new System.Net.Sockets.TcpClient(); c.Connect("127.0.0.1", MonPort); var ns = c.GetStream(); var buf = new byte[8192];
+            string Read(int ms) { var sb = new StringBuilder(); var end = DateTime.Now.AddMilliseconds(ms); ns.ReadTimeout = 1000; while (DateTime.Now < end) { try { int n = ns.Read(buf, 0, buf.Length); if (n <= 0) break; sb.Append(Encoding.ASCII.GetString(buf, 0, n)); if (sb.ToString().Contains("(qemu)")) break; } catch (IOException) { } } return sb.ToString(); }
+            Read(5000); var w = Encoding.ASCII.GetBytes("savevm sleep\n"); ns.Write(w, 0, w.Length);
+            var res = Read(240000);
+            if (res.Contains("rror") || res.Contains("annot")) { var pd = Encoding.ASCII.GetBytes("system_powerdown\n"); ns.Write(pd, 0, pd.Length); return res.Replace("(qemu)", "").Trim(); }
+            var q = Encoding.ASCII.GetBytes("quit\n"); ns.Write(q, 0, q.Length); run!.WaitForExit(20000);
+            File.WriteAllText(FlagFile, "1"); return null;
+        }
+        catch (Exception ex) { return ex.Message; }
+    }
     static string QemuDir => Path.Combine(Paths.Vm, "qemu");
     static string Disk => Path.Combine(Paths.Vm, "linux.qcow2");
     static string? Exe(string n) { foreach (var d in new[] { QemuDir, @"C:\Program Files\qemu" }) { var p = Path.Combine(d, n); if (File.Exists(p)) return p; } return null; }
@@ -69,8 +91,10 @@ static class VmApp
             var exe = Exe("qemu-system-x86_64.exe")!; var psi = new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe)!, UseShellExecute = false };
             foreach (var a in new[] { "-m", ram.Value.ToString(), "-smp", cpu.Value.ToString(), "-accel", "whpx,kernel-irqchip=off", "-accel", "tcg", "-drive", $"file={Disk},format=qcow2,if=virtio", "-nic", "user,model=virtio-net-pci", "-device", "qemu-xhci", "-device", "usb-tablet", "-vga", "std", "-name", "USB Desktop Linux" }) psi.ArgumentList.Add(a);
             if (boot.SelectedIndex == 1 && Iso() != null) { psi.ArgumentList.Add("-cdrom"); psi.ArgumentList.Add(Iso()!); psi.ArgumentList.Add("-boot"); psi.ArgumentList.Add("d"); }
-            run = Process.Start(psi); run!.EnableRaisingEvents = true; run.Exited += (_, _) => { if (!p.IsDisposed) p.BeginInvoke(new Action(Refresh)); };
-            st.Text = "Linux is starting. A new window will open."; return Task.CompletedTask;
+            psi.ArgumentList.Add("-monitor"); psi.ArgumentList.Add($"tcp:127.0.0.1:{MonPort},server,nowait");
+            bool resuming = Frozen; var t0 = DateTime.Now; if (resuming) { psi.ArgumentList.Add("-loadvm"); psi.ArgumentList.Add("sleep"); try { File.Delete(FlagFile); } catch { } }
+            run = Process.Start(psi); run!.EnableRaisingEvents = true; if (resuming) run.Exited += (_, _) => { if ((DateTime.Now - t0).TotalSeconds < 20 && !p.IsDisposed) p.BeginInvoke(new Action(() => st.Text = "Couldn't resume the saved Linux. Press Start to boot it fresh.")); }; run.Exited += (_, _) => { if (!p.IsDisposed) p.BeginInvoke(new Action(Refresh)); };
+            st.Text = resuming ? "Resuming Linux exactly where you left it…" : "Linux is starting. A new window will open."; return Task.CompletedTask;
         });
         stop = B(r6, "Stop", () => { try { run?.Kill(); } catch { } return Task.CompletedTask; }, false); stop.BackColor = Color.FromArgb(160, 60, 70);
         st = pg.P("", true, false, 10.5f, 8);
@@ -83,7 +107,9 @@ static class VmApp
             s1.ForeColor = q ? Color.FromArgb(110, 231, 160) : Ui.Sub; s2.ForeColor = i ? Color.FromArgb(110, 231, 160) : Ui.Sub; s3.ForeColor = d ? Color.FromArgb(110, 231, 160) : Ui.Sub;
             start.Enabled = q && d && !on && (boot.SelectedIndex == 0 || i); stop.Enabled = on; if (on) st.Text = "Linux is running";
         }
-        boot.SelectedIndexChanged += (_, _) => Refresh(); Refresh(); return p;
+        boot.SelectedIndexChanged += (_, _) => Refresh(); Refresh();
+        p.Tag = new StateApi { Get = () => Frozen ? "frozen" : null, Set = d => { if (d == "frozen") Task.Delay(1800).ContinueWith(_ => { if (!p.IsDisposed) p.BeginInvoke(new Action(() => { if (start.Enabled) start.PerformClick(); })); }); } };
+        return p;
     }
     static Label st = null!;
 }

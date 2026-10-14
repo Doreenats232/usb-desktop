@@ -181,7 +181,7 @@ class DesktopForm : Form
         KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) HideMenu(); };
         tm.Tick += (_, _) => Tick(); tm.Start();
         Load += (_, _) => { ApplyLook(); ApplyWidgets(); LayoutBar(); Tick(); };
-        FormClosing += (_, _) => { if (Cfg.Get("sleep", "0") == "1") SaveState(); };
+        FormClosing += (_, _) => { if (Cfg.Get("sleep", "0") == "1") { if (VmApp.Running) Task.Run(VmApp.Freeze).GetAwaiter().GetResult(); SaveState(); } };
         Shown += async (_, _) =>
         {
             var sp = new Splash(ClientSize); Controls.Add(sp); sp.BringToFront(); Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " ");
@@ -407,6 +407,7 @@ class DesktopForm : Form
     {
         HideMenu(); Toast("Going to sleep…");
         try { await Web.FlushAll(); } catch { }
+        if (VmApp.Running) { Toast("Saving Linux… this can take a moment"); var err = await Task.Run(VmApp.Freeze); if (err != null) Toast("Linux couldn't be frozen: " + err); }
         if (!SaveState()) { Toast("Couldn't save your session"); return; }
         await Task.Delay(500); Application.Exit();
     }
