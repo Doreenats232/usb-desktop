@@ -81,7 +81,7 @@ static class Web
         Exception? last = null;
         foreach (var d in dirs)
         {
-            try { Directory.CreateDirectory(d); env = await CoreWebView2Environment.CreateAsync(null, d, new CoreWebView2EnvironmentOptions("--disable-features=msSmartScreenProtection")); return env; }
+            try { Directory.CreateDirectory(d); env = await CoreWebView2Environment.CreateAsync(null, d, new CoreWebView2EnvironmentOptions("--disable-features=msSmartScreenProtection", "en-US")); return env; }
             catch (WebView2RuntimeNotFoundException) { throw; }
             catch (Exception ex) { last = ex; }
         }
@@ -262,7 +262,7 @@ input:hover,input:focus{box-shadow:0 2px 12px rgba(32,33,36,.26);border-color:tr
             try
             {
                 await wv.EnsureCoreWebView2Async(await Env()); var c = wv.CoreWebView2;
-                c.Settings.IsPasswordAutosaveEnabled = true; c.Settings.IsGeneralAutofillEnabled = true; c.Settings.UserAgent = ChromeUA; c.Settings.AreDevToolsEnabled = true; c.Settings.IsStatusBarEnabled = false;
+                c.Settings.IsPasswordAutosaveEnabled = true; c.Settings.IsGeneralAutofillEnabled = true; c.Settings.AreDevToolsEnabled = true; c.Settings.IsStatusBarEnabled = false;
                 KeepLogins(c);
                 c.DownloadStarting += (_, e) => Dl(sh, e, dlDir, asApp);
                 c.DocumentTitleChanged += (_, _) => { ti.Title = c.DocumentTitle; tabs.Invalidate(); };
