@@ -174,7 +174,7 @@ class DesktopForm : Form
         BuildMenu(); BuildDeskMenu();
         quick = new QuickPanel(this); Controls.Add(quick);
         tray.Click += (_, _) => ToggleQuick(); clock.Click += (_, _) => ToggleQuick(); tray.Cursor = Cursors.Hand; clock.Cursor = Cursors.Hand;
-        Application.AddMessageFilter(new IdleFilter(() => lastInput = DateTime.Now));
+        Application.AddMessageFilter(new IdleFilter(() => { lastInput = DateTime.Now; LastInputAt = lastInput; }));
         desk.MouseDown += (_, _) => { HideMenu(); foreach (var i in desk.Controls.OfType<DeskIcon>()) { i.Sel = false; i.Invalidate(); } };
         desk.SizeChanged += (_, _) => { SetWall(); if (wclock != null) wclock.Left = Math.Max(0, desk.Width - wclock.Width - Ui.D(20)); if (wnote != null) wnote.Left = Math.Max(0, desk.Width - wnote.Width - Ui.D(24)); };
         KeyUp += (_, e) => { if (e.KeyCode == Keys.PrintScreen) Shot(); };
@@ -201,6 +201,18 @@ class DesktopForm : Form
         tray.Battery = ps.BatteryChargeStatus != BatteryChargeStatus.NoSystemBattery && ps.BatteryLifePercent <= 1 ? (int)(ps.BatteryLifePercent * 100) : -1;
     }
 
+    public static DateTime LastInputAt = DateTime.Now; public static event Action? PanicLock;
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr h, int id, uint mod, uint vk);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr h, int id);
+    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); RegisterHotKey(Handle, 77, 0x3, 0x4C); }
+    protected override void OnHandleDestroyed(EventArgs e) { try { UnregisterHotKey(Handle, 77); } catch { } base.OnHandleDestroyed(e); }
+    protected override void WndProc(ref Message m) { if (m.Msg == 0x0312 && m.WParam == (IntPtr)77) PanicNow(); else base.WndProc(ref m); }
+    public void PanicNow()
+    {
+        if (locking) return; HideMenu(); PanicLock?.Invoke(); try { Clipboard.Clear(); } catch { }
+        var vis = wins.Where(x => x.w.Visible).Select(x => x.w).ToList(); foreach (var w in vis) w.Visible = false; Sync();
+        Lock(); foreach (var w in vis) w.Visible = true; Sync();
+    }
     Panel? gone;
     void UsbCheck()
     {
@@ -403,7 +415,7 @@ class DesktopForm : Form
         mName.Bounds = new Rectangle(Ui.D(76), Ui.D(536), Ui.D(250), Ui.D(44)); mName.ForeColor = Ui.Text; mName.Font = Ui.F(11); mName.TextAlign = ContentAlignment.MiddleLeft; mName.BackColor = Color.Transparent;
         var pw = new RoundButton { Glyph = "power", GlyphScale = 0.42f, Bounds = new Rectangle(Ui.D(374), Ui.D(536), Ui.D(50), Ui.D(44)), Pill = true };
         var pm = new ContextMenuStrip();
-        pm.Items.Add("Lock", null, (_, _) => { HideMenu(); Lock(); }); pm.Items.Add("Sleep (resume on any PC)", null, (_, _) => SleepNow()); pm.Items.Add("Safe eject USB", null, (_, _) => EjectNow()); pm.Items.Add("Shut down", null, (_, _) => Application.Exit());
+        pm.Items.Add("Lock", null, (_, _) => { HideMenu(); Lock(); }); pm.Items.Add("Sleep (resume on any PC)", null, (_, _) => SleepNow()); pm.Items.Add("Safe eject USB", null, (_, _) => EjectNow()); pm.Items.Add("Panic lock (Ctrl+Alt+L)", null, (_, _) => PanicNow()); pm.Items.Add("Shut down", null, (_, _) => Application.Exit());
         pw.Click += (_, _) => pm.Show(pw, new Point(0, 0), ToolStripDropDownDirection.AboveLeft);
         menu.Controls.AddRange(new Control[] { sb, pl, grid, mAv, mName, pw }); pwBtn = pw; Ui.Dark(grid); Controls.Add(menu);
     }

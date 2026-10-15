@@ -110,6 +110,11 @@ static class VaultApp
             B("Lock", () => { Clear(); Build(); });
             p.Controls.Add(lv); p.Controls.Add(top); Fill();
         }
+        Action panic = () => { Clear(); if (!p.IsDisposed) p.BeginInvoke(new Action(Build)); };
+        DesktopForm.PanicLock += panic; p.Disposed += (_, _) => DesktopForm.PanicLock -= panic;
+        var lt = new System.Windows.Forms.Timer { Interval = 10000 };
+        lt.Tick += (_, _) => { int m = Cfg.Int("vaultlock", 3); if (m > 0 && key != null && DateTime.Now - DesktopForm.LastInputAt > TimeSpan.FromMinutes(m)) { Clear(); Build(); sh.Toast("Vault locked after being idle"); } };
+        lt.Start(); p.Disposed += (_, _) => lt.Dispose();
         Build(); return p;
     }
 }

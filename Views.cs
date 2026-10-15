@@ -222,6 +222,12 @@ static class Views
                         th.Click += (_, _) => { Cfg.Set("wp", idx.ToString()); Cfg.Set("wallimg", ""); sh.ApplyLook(); show(0); };
                         grid.Controls.Add(th);
                     }
+                    pg.P("Accent colour", false, true, 11, 12); var sw = pg.Row(4);
+                    foreach (var (nm, hx) in new[] { ("Wallpaper", ""), ("Blue", "#4F8CFF"), ("Purple", "#8B5CF6"), ("Pink", "#EC4899"), ("Green", "#22C55E"), ("Orange", "#F97316"), ("Red", "#EF4444") })
+                    {
+                        var hh = hx; var cur = Cfg.Get("accent", "") == hx; var b = pg.Btn(sw, nm, () => { Cfg.Set("accent", hh); sh.ApplyLook(); sh.Toast("Accent changed. Reopen windows to see it everywhere."); show(0); }, false);
+                        if (hx != "") b.BackColor = ColorTranslator.FromHtml(hx); b.ForeColor = Color.White; if (cur) b.Underline = Color.White;
+                    }
                     var r = pg.Row(8); pg.Btn(r, "Use my own picture…", () => { var f = Pick(); if (f != null) { Cfg.Set("wallimg", U.SaveImg(f, "wallpaper")); sh.ApplyLook(); show(0); } });
                     break;
                 }
@@ -279,6 +285,8 @@ static class Views
                 {
                     pg.H("Security"); pg.P("Auto-lock after being idle (minutes, 0 = off)", false, false, 11); var r = pg.Row(4); pg.Num(r, 0, 240, Cfg.Int("idle", 10), 1, v => Cfg.Set("idle", v.ToString()));
                     pg.Switch("Close the desktop when the USB is removed", Cfg.Get("usbwatch", "1") == "1", on => Cfg.Set("usbwatch", on ? "1" : "0"));
+                    pg.P("Lock the Vault after being idle (minutes, 0 = off)", false, false, 11, 10); var rv = pg.Row(4); pg.Num(rv, 0, 120, Cfg.Int("vaultlock", 3), 1, v => Cfg.Set("vaultlock", v.ToString()));
+                    pg.P("Panic lock: press Ctrl+Alt+L anywhere to hide your windows, clear the clipboard, close the Vault and show the sign-in screen.", true, false, 10, 8);
                     pg.Switch("Sleep instead of shut down (resume on any PC)", Cfg.Get("sleep", "0") == "1", on => Cfg.Set("sleep", on ? "1" : "0"));
                     pg.P("Sleep saves your open windows and browser tabs, encrypted with your login password, and brings them back the next time you sign in, on any computer. Apps already open on the PC itself (like its own Chrome) can't be saved.", true, false, 10, 6);
                     pg.P("Passwords are salted and hashed (PBKDF2). Change yours in Accounts.", true, false, 10, 12);

@@ -36,7 +36,7 @@ static class Theme
         ("Mint", Color.FromArgb(6,34,44), Color.FromArgb(20,184,166), Color.FromArgb(140,255,200)),
     };
     public static int Idx => Math.Clamp(Cfg.Int("wp", 0), 0, P.Length - 1);
-    public static Color Accent => P[Idx].B;
+    public static Color Accent { get { var h = Cfg.Get("accent", ""); if (h.Length == 7 && h[0] == '#') { try { return ColorTranslator.FromHtml(h); } catch { } } return P[Idx].B; } }
 
     static void Glow(Graphics g, float cx, float cy, float r, Color c, int alpha)
     {
