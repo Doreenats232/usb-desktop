@@ -27,6 +27,51 @@ static class VmApp
         }
         catch (Exception ex) { return ex.Message; }
     }
+    static string? pendingPw; static bool pendingDesk; static System.Net.Sockets.TcpListener? seedSrv;
+    const int SeedPort = 45518;
+
+    // Tiny local web server that hands Linux its first-boot settings (user, password, desktop) so nothing has to be typed inside the VM.
+    static void StartSeed(string pw, bool desktop)
+    {
+        string user = "user"; var ud = new StringBuilder("#cloud-config\nhostname: usb-linux\nusers:\n  - name: " + user + "\n    gecos: USB Desktop user\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: /bin/bash\n    groups: [sudo]\n    lock_passwd: false\n");
+        ud.Append("chpasswd:\n  expire: false\n  list: |\n    " + user + ":" + pw.Replace("\n", "") + "\nssh_pwauth: true\n");
+        if (desktop)
+        {
+            ud.Append("package_update: true\npackages:\n  - xorg\n  - xfce4\n  - xfce4-terminal\n  - lightdm\n  - firefox-esr\n  - dbus-x11\n");
+            ud.Append("write_files:\n  - path: /etc/lightdm/lightdm.conf.d/50-autologin.conf\n    content: |\n      [Seat:*]\n      autologin-user=" + user + "\n      autologin-user-timeout=0\n");
+            ud.Append("runcmd:\n  - [ systemctl, set-default, graphical.target ]\n  - [ systemctl, enable, lightdm ]\n  - [ systemctl, start, lightdm ]\n");
+        }
+        var files = new Dictionary<string, string> { ["/user-data"] = ud.ToString(), ["/meta-data"] = "instance-id: usb-desktop-1\nlocal-hostname: usb-linux\n", ["/vendor-data"] = "" };
+        try { seedSrv?.Stop(); } catch { }
+        var srv = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, SeedPort); srv.Start(); seedSrv = srv; var until = DateTime.Now.AddMinutes(25);
+        Task.Run(async () =>
+        {
+            while (DateTime.Now < until)
+            {
+                try
+                {
+                    var c = await srv.AcceptTcpClientAsync(); using (c) { var ns = c.GetStream(); var buf = new byte[4096]; int n = await ns.ReadAsync(buf, 0, buf.Length); var req = Encoding.ASCII.GetString(buf, 0, n); var path = req.Split(' ').Skip(1).FirstOrDefault()?.Split('?')[0] ?? "";
+                        byte[] body = Encoding.UTF8.GetBytes(files.TryGetValue(path, out var txt) ? txt : ""); string head = files.ContainsKey(path) ? "HTTP/1.0 200 OK" : "HTTP/1.0 404 Not Found";
+                        var hb = Encoding.ASCII.GetBytes(head + "\r\nContent-Type: text/plain\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n"); await ns.WriteAsync(hb, 0, hb.Length); await ns.WriteAsync(body, 0, body.Length); }
+                }
+                catch { break; }
+            }
+            try { srv.Stop(); } catch { }
+        });
+    }
+
+    static async Task EnsureQemu(DlCard card, int step, CancellationToken ct)
+    {
+        if (Exe("qemu-system-x86_64.exe") != null) return;
+        if (System.Runtime.InteropServices.RuntimeInformation.OSArchitecture != System.Runtime.InteropServices.Architecture.X64) throw new Exception("Full OS needs 64-bit Intel/AMD Windows");
+        card.Stage($"Step {step}/5 · Finding the latest QEMU…", 4);
+        var url = await Latest("https://qemu.weilnetz.de/w64/", @"qemu-w64-setup-\d+\.exe(?![\w.])"); var inst = Path.Combine(Paths.Vm, "qemu-setup.exe");
+        await Net.Download(url, inst, (g, t, s) => card.Stage($"Step {step}/5 · Downloading QEMU  {Ui.Bytes(g)}" + (t > 0 ? " of " + Ui.Bytes(t) : ""), t > 0 ? 4 + 20.0 * g / t : -1), ct);
+        card.Stage($"Step {step}/5 · Installing QEMU… press Yes on the Windows prompt", 26); Directory.CreateDirectory(QemuDir);
+        using var pr = Process.Start(new ProcessStartInfo(inst, "/S /D=" + QemuDir) { UseShellExecute = true, Verb = "runas" })!; await pr.WaitForExitAsync();
+        try { File.Delete(inst); } catch { }
+        if (Exe("qemu-system-x86_64.exe") == null) throw new Exception("QEMU didn't install. Run the setup again and press Yes on the Windows prompt.");
+    }
     static string QemuDir => Path.Combine(Paths.Vm, "qemu");
     static string Disk => Path.Combine(Paths.Vm, "linux.qcow2");
     static string? Exe(string n) { foreach (var d in new[] { QemuDir, @"C:\Program Files\qemu" }) { var p = Path.Combine(d, n); if (File.Exists(p)) return p; } return null; }
@@ -48,6 +93,9 @@ static class VmApp
         RoundButton B(Control parent, string t, Func<Task> a, bool primary = true) { RoundButton? btn = null; btn = pg.Btn(parent, t, async () => { try { await a(); } catch (Exception ex) { st.Text = ex.Message; } Refresh(); }, primary); return btn; }
 
         pg.H("Full OS (Linux)"); pg.P("Runs a real Linux computer inside a window. Everything is saved on the USB.", true);
+        pg.P("Easy setup", false, true, 13, 14); pg.P("One button. It looks for what's already on this USB, downloads and installs whatever is missing, asks you only a few simple questions, and starts Linux ready to log in.", true);
+        var rA = pg.Row(6); B(rA, "Set up Full OS automatically", () => Auto());
+        pg.P("Manual setup (optional)", false, true, 12, 20);
         pg.P("1  QEMU engine", false, true, 11, 12); s1 = pg.P("", true); var r1 = pg.Row(2);
         B(r1, "Install QEMU", async () =>
         {
@@ -91,6 +139,7 @@ static class VmApp
             var exe = Exe("qemu-system-x86_64.exe")!; var psi = new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe)!, UseShellExecute = false };
             foreach (var a in new[] { "-m", ram.Value.ToString(), "-smp", cpu.Value.ToString(), "-accel", "whpx,kernel-irqchip=off", "-accel", "tcg", "-drive", $"file={Disk},format=qcow2,if=virtio", "-nic", "user,model=virtio-net-pci", "-device", "qemu-xhci", "-device", "usb-tablet", "-vga", "std", "-name", "USB Desktop Linux" }) psi.ArgumentList.Add(a);
             if (boot.SelectedIndex == 1 && Iso() != null) { psi.ArgumentList.Add("-cdrom"); psi.ArgumentList.Add(Iso()!); psi.ArgumentList.Add("-boot"); psi.ArgumentList.Add("d"); }
+            if (pendingPw != null) { StartSeed(pendingPw, pendingDesk); pendingPw = null; psi.ArgumentList.Add("-smbios"); psi.ArgumentList.Add("type=1,serial=ds=nocloud-net;s=http://10.0.2.2:" + SeedPort + "/"); }
             psi.ArgumentList.Add("-monitor"); psi.ArgumentList.Add($"tcp:127.0.0.1:{MonPort},server,nowait");
             bool resuming = Frozen; var t0 = DateTime.Now; if (resuming) { psi.ArgumentList.Add("-loadvm"); psi.ArgumentList.Add("sleep"); try { File.Delete(FlagFile); } catch { } }
             run = Process.Start(psi); run!.EnableRaisingEvents = true; if (resuming) run.Exited += (_, _) => { if ((DateTime.Now - t0).TotalSeconds < 20 && !p.IsDisposed) p.BeginInvoke(new Action(() => st.Text = "Couldn't resume the saved Linux. Press Start to boot it fresh.")); }; run.Exited += (_, _) => { if (!p.IsDisposed) p.BeginInvoke(new Action(Refresh)); };
@@ -106,6 +155,38 @@ static class VmApp
             s1.Text = q ? "Installed" : "Not installed yet"; s2.Text = i ? Path.GetFileName(Iso()!) : "No installer downloaded yet"; s3.Text = d ? $"linux.qcow2 ({new FileInfo(Disk).Length / 1048576} MB used)" : "No disk yet";
             s1.ForeColor = q ? Color.FromArgb(110, 231, 160) : Ui.Sub; s2.ForeColor = i ? Color.FromArgb(110, 231, 160) : Ui.Sub; s3.ForeColor = d ? Color.FromArgb(110, 231, 160) : Ui.Sub;
             start.Enabled = q && d && !on && (boot.SelectedIndex == 0 || i); stop.Enabled = on; if (on) st.Text = "Linux is running";
+        }
+        async Task Auto()
+        {
+            var cts = new CancellationTokenSource(); var card = sh.NewDl("Setting up Full OS", cts, "");
+            try
+            {
+                card.Stage("Step 1/5 · Looking for what's already on your USB…", 2); await Task.Delay(700);
+                bool hadDisk = File.Exists(Disk);
+                await EnsureQemu(card, 2, cts.Token);
+                bool fresh = !hadDisk;
+                if (hadDisk) { int c = Ask.Choose("A Linux disk is already on this USB", "Keep using it, or start over with a fresh Linux?", "Keep using it", "Replace with a fresh Linux"); if (c < 0) { card.Fail("Cancelled"); return; } fresh = c == 1; }
+                if (fresh)
+                {
+                    card.Stage("Step 3/5 · A few quick questions…", 28);
+                    int style = Ask.Choose("What kind of Linux?", "Desktop looks like a normal PC with windows, icons and a web browser. Terminal is smaller and starts faster.", "Desktop (XFCE)", "Terminal only"); if (style < 0) { card.Fail("Cancelled"); return; }
+                    int size = Ask.Choose("How much space?", "This is just a file on your USB and it only grows as you use it.", "8 GB", "16 GB", "32 GB"); if (size < 0) { card.Fail("Cancelled"); return; }
+                    var pw = Ask.Password("Choose a Linux password", "You'll log in as  user  with this password."); if (string.IsNullOrEmpty(pw)) { card.Fail("Cancelled"); return; }
+                    var part = Disk + ".part";
+                    await Net.Download("https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2", part, (g, t, s) => card.Stage($"Step 4/5 · Downloading Linux  {Ui.Bytes(g)}" + (t > 0 ? " of " + Ui.Bytes(t) : "") + $"  ·  {Ui.Bytes((long)s)}/s", t > 0 ? 30 + 56.0 * g / t : -1), cts.Token);
+                    card.Stage("Step 4/5 · Preparing your disk…", 88);
+                    if (File.Exists(Disk)) File.Delete(Disk); File.Move(part, Disk); try { File.Delete(FlagFile); } catch { }
+                    var img = Exe("qemu-img.exe") ?? throw new Exception("qemu-img is missing. Reinstall QEMU.");
+                    using (var pr = Process.Start(new ProcessStartInfo(img) { ArgumentList = { "resize", Disk, new[] { 8, 16, 32 }[size] + "G" }, CreateNoWindow = true, UseShellExecute = false })!) await pr.WaitForExitAsync();
+                    pendingPw = pw; pendingDesk = style == 0;
+                }
+                card.Stage("Step 5/5 · Starting Linux…", 96); Cfg.Set("vm_boot", "0"); boot.SelectedIndex = 0; Refresh(); await Task.Delay(500);
+                if (!start.Enabled) throw new Exception("Everything downloaded but Linux couldn't start. Press Start Full OS below.");
+                start.PerformClick();
+                card.Done(fresh ? "Linux is starting. The first start takes several minutes while it sets itself up. Log in as user." : "Linux is starting.");
+            }
+            catch (OperationCanceledException) { card.Fail("Cancelled"); }
+            catch (Exception ex) { card.Fail(ex.Message); }
         }
         boot.SelectedIndexChanged += (_, _) => Refresh(); Refresh();
         p.Tag = new StateApi { Get = () => Frozen ? "frozen" : null, Set = d => { if (d == "frozen") Task.Delay(1800).ContinueWith(_ => { if (!p.IsDisposed) p.BeginInvoke(new Action(() => { if (start.Enabled) start.PerformClick(); })); }); } };
