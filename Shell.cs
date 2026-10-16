@@ -368,9 +368,18 @@ class DesktopForm : Form
         if (Directory.Exists(p)) { Launch("files", p); return; }
         var ext = Path.GetExtension(p).ToLower();
         if (new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif" }.Contains(ext)) { Launch("photo", p); return; }
+        if (new[] { ".pdf", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".svg", ".webp", ".opus" }.Contains(ext)) { Launch("web", new Uri(p).AbsoluteUri); return; }
+        if (ext == ".zip") { _ = ExtractHere(p); return; }
         if (new[] { ".txt", ".md", ".json", ".js", ".cs", ".log", ".ini", ".html", ".css", ".py", ".bat" }.Contains(ext)) Launch("notepad", p); else U.Open(p);
     }
 
+    async Task ExtractHere(string zip)
+    {
+        var card = NewDl("Extracting " + Path.GetFileName(zip), null, "");
+        try { card.Stage("Extracting… 0%", 0); var f = await Task.Run(() => Installer.ExtractZip(zip, Path.GetDirectoryName(zip)!, pct => card.Stage("Extracting… " + (int)pct + "%", pct))); card.Done("Extracted to " + Path.GetFileName(f)); Reload(); }
+        catch (InvalidDataException) { card.Fail("This isn't a valid zip file."); }
+        catch (Exception ex) { card.Fail(ex.Message); }
+    }
     Win T(string k, string? arg, Win w) { w.Kind = k; w.Arg = arg; return w; }
     public void Launch(string k, string? arg = null)
     {

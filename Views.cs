@@ -275,7 +275,8 @@ static class Views
                 {
                     pg.H("Browser"); pg.P("Search engine", false, true, 11, 6); var r = pg.Row(4); var cur = Cfg.Get("engine", "google");
                     foreach (var (n, key) in new[] { ("Google", "google"), ("Bing", "bing"), ("DuckDuckGo", "duck") }) { var kk = key; pg.Btn(r, n, () => { Cfg.Set("engine", kk); show(4); }, cur == key); }
-                    pg.Gap(6); pg.Switch("Keep me signed in to websites (accounts travel with this USB)", Cfg.Get("keeplogins", "1") == "1", on => Cfg.Set("keeplogins", on ? "1" : "0"));
+                    pg.Gap(6); pg.Switch("Block ads and trackers", Cfg.Get("adblock", "1") == "1", on => Cfg.Set("adblock", on ? "1" : "0"));
+                    pg.Switch("Keep me signed in to websites (accounts travel with this USB)", Cfg.Get("keeplogins", "1") == "1", on => Cfg.Set("keeplogins", on ? "1" : "0"));
                     pg.P("The browser keeps the same profile, language and device identity on every PC, which is what lets most sites stay signed in. A few sites (Google, banks, school systems) may still ask you to confirm on a new network. That is their own security check and can't be switched off from here. Confirm once and they usually remember this profile.", true, false, 10, 8);
                     pg.P("Your logins and saved passwords are stored in the data folder on the USB. Anyone with the USB can use them, so keep your password and the USB safe.", true, false, 10, 10);
                     var r2 = pg.Row(8); pg.Btn(r2, "Open downloads folder", () => { var d = Path.Combine(Paths.Desktop, "Downloads"); Directory.CreateDirectory(d); U.Open(d); }, false);

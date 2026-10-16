@@ -19,7 +19,7 @@ class ChromeTabs : Control
 {
     public readonly List<TabInfo> Tabs = new(); public int Sel;
     public event Action<int>? Picked, CloseTab; public event Action? NewTab;
-    int hover = -1;
+    int hover = -1, dragIdx = -1;
     public ChromeTabs()
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
@@ -57,12 +57,23 @@ class ChromeTabs : Control
     }
     public void CloseTabAt(int i) => CloseTab?.Invoke(i);
     int Hit(Point p) { for (int i = 0; i < Tabs.Count; i++) if (TabRect(i).Contains(p)) return i; return -1; }
-    protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); var h = Hit(e.Location); if (h != hover) { hover = h; Invalidate(); } }
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (dragIdx >= 0 && e.Button == MouseButtons.Left && Tabs.Count > 1)
+        {
+            int target = Math.Clamp((e.X - Ui.D(8)) / Math.Max(1, TabW), 0, Tabs.Count - 1);
+            if (target != dragIdx) { var t = Tabs[dragIdx]; Tabs.RemoveAt(dragIdx); Tabs.Insert(target, t); dragIdx = target; Sel = target; hover = target; Invalidate(); }
+            return;
+        }
+        var h = Hit(e.Location); if (h != hover) { hover = h; Invalidate(); }
+    }
+    protected override void OnMouseUp(MouseEventArgs e) { base.OnMouseUp(e); dragIdx = -1; }
     protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hover = -1; Invalidate(); }
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e); int h = Hit(e.Location);
-        if (h >= 0) { if (e.Button == MouseButtons.Middle || XRect(h).Contains(e.Location)) CloseTab?.Invoke(h); else { Sel = h; Picked?.Invoke(h); Invalidate(); } }
+        if (h >= 0) { if (e.Button == MouseButtons.Middle || XRect(h).Contains(e.Location)) CloseTab?.Invoke(h); else { Sel = h; dragIdx = h; Picked?.Invoke(h); Invalidate(); } }
         else if (PlusRect.Contains(e.Location)) NewTab?.Invoke();
     }
 }
@@ -143,6 +154,32 @@ static class Web
         try { if (c != null) foreach (var ck in await c.CookieManager.GetCookiesAsync(null)) if (ck.Domain.Contains("google") || ck.Domain.Contains("youtube") || ck.Domain.Contains("gstatic")) c.CookieManager.DeleteCookie(ck); } catch { }
         Cfg.Set("gname", ""); Cfg.Set("gemail", ""); try { File.Delete(AvatarFile); } catch { }
     }
+
+    // ----- history and ad blocking -----
+    static string HistFile => Path.Combine(Paths.Data, "history.txt");
+    static void AddHistory(string title, string url)
+    {
+        try
+        {
+            if (!url.StartsWith("http")) return; var l = File.Exists(HistFile) ? File.ReadAllLines(HistFile).ToList() : new List<string>();
+            l.Add(DateTime.Now.Ticks + "\t" + title.Replace('\t', ' ').Replace('\n', ' ') + "\t" + url); if (l.Count > 2000) l = l.Skip(l.Count - 2000).ToList(); File.WriteAllLines(HistFile, l);
+        }
+        catch { }
+    }
+    static string HistoryHtml()
+    {
+        string E(string x) => System.Net.WebUtility.HtmlEncode(x); var sb = new System.Text.StringBuilder();
+        try
+        {
+            if (File.Exists(HistFile))
+                foreach (var line in File.ReadAllLines(HistFile).Reverse().Take(300)) { var p = line.Split('\t'); if (p.Length < 3) continue; var when = new DateTime(long.Parse(p[0])); sb.Append("<a href='" + E(p[2]) + "'><span class=t>" + when.ToString("ddd d MMM HH:mm") + "</span><b>" + E(p[1] == "" ? p[2] : p[1]) + "</b><i>" + E(p[2]) + "</i></a>"); }
+        }
+        catch { }
+        if (sb.Length == 0) sb.Append("<p style='color:#80868b'>Nothing here yet. Pages you visit will show up here.</p>");
+        return "<!doctype html><meta charset=utf-8><title>History</title><style>body{font-family:'Segoe UI',Arial;margin:0;background:#fff;color:#202124}h1{font-weight:400;padding:24px 40px;margin:0;border-bottom:1px solid #dadce0}.w{max-width:900px;margin:0 auto;padding:10px 40px}a{display:flex;gap:18px;align-items:baseline;padding:10px 8px;text-decoration:none;color:#202124;border-radius:8px}a:hover{background:#f1f3f4}.t{color:#80868b;font-size:12px;width:110px;flex:none}b{font-weight:500;flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}i{color:#80868b;font-size:12px;font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}</style><h1>History</h1><div class=w>" + sb + "</div>";
+    }
+    static readonly string[] AdHosts = { "doubleclick.net", "googlesyndication.com", "googleadservices.com", "adservice.google.com", "pagead2.googlesyndication.com", "taboola.com", "outbrain.com", "adnxs.com", "criteo.com", "criteo.net", "pubmatic.com", "rubiconproject.com", "openx.net", "moatads.com", "scorecardresearch.com", "adsrvr.org", "amazon-adsystem.com", "popads.net", "propellerads.com", "exoclick.com", "adcolony.com", "mgid.com", "revcontent.com" };
+    static bool IsAd(string uri) { try { var h = new Uri(uri).Host; return AdHosts.Any(a => h == a || h.EndsWith("." + a)); } catch { return false; } }
 
     static string Engine(string q)
     {
@@ -299,11 +336,13 @@ input:hover,input:focus{box-shadow:0 2px 12px rgba(32,33,36,.26);border-color:tr
                 await wv.EnsureCoreWebView2Async(await Env()); var c = wv.CoreWebView2;
                 c.Settings.IsPasswordAutosaveEnabled = true; c.Settings.IsGeneralAutofillEnabled = true; c.Settings.AreDevToolsEnabled = true; c.Settings.IsStatusBarEnabled = false;
                 KeepLogins(c);
+                c.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+                c.WebResourceRequested += (_, e) => { if (Cfg.Get("adblock", "1") == "1" && IsAd(e.Request.Uri)) e.Response = c.Environment.CreateWebResourceResponse(null, 204, "No Content", ""); };
                 c.DownloadStarting += (_, e) => Dl(sh, e, dlDir, asApp);
                 c.DocumentTitleChanged += (_, _) => { ti.Title = c.DocumentTitle; tabs.Invalidate(); };
                 c.SourceChanged += (_, _) => { ti.Url = c.Source ?? ""; if (Cur() == ti) { SetAddr(c.Source); RefreshStar(); } };
                 c.NavigationStarting += (_, _) => { ti.Loading = true; if (Cur() == ti) { prog.Indeterminate = true; rel.Glyph = "close"; rel.Invalidate(); } tabs.Invalidate(); };
-                c.NavigationCompleted += (_, _) => { ti.Loading = false; _ = DetectGoogle(c, () => { prof.Image = ProfileImage(Ui.D(28)); }); if (Cur() == ti) { prog.Indeterminate = false; prog.Value = 0; rel.Glyph = "reload"; rel.Invalidate(); } tabs.Invalidate(); };
+                c.NavigationCompleted += (_, _) => { ti.Loading = false; try { AddHistory(c.DocumentTitle ?? "", c.Source ?? ""); } catch { } _ = DetectGoogle(c, () => { prof.Image = ProfileImage(Ui.D(28)); }); if (Cur() == ti) { prog.Indeterminate = false; prog.Value = 0; rel.Glyph = "reload"; rel.Invalidate(); } tabs.Invalidate(); };
                 c.FaviconChanged += async (_, _) => { try { using var s = await c.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png); if (s != null) { using var im = Image.FromStream(s); ti.Icon = new Bitmap(im); tabs.Invalidate(); } } catch { } };
                 c.NewWindowRequested += (_, e) => { e.Handled = true; AddTab(e.Uri); };
                 c.ProcessFailed += (_, _) => { try { c.Reload(); } catch { } };
@@ -332,6 +371,10 @@ input:hover,input:focus{box-shadow:0 2px 12px rgba(32,33,36,.26);border-color:tr
 
         var m = new ContextMenuStrip { Renderer = new ToolStripProfessionalRenderer(), ForeColor = Color.FromArgb(32, 33, 36), BackColor = Color.White, Font = Ui.F(10) };
         m.Items.Add("New tab", null, (_, _) => AddTab(""));
+        m.Items.Add(new ToolStripSeparator());
+        m.Items.Add("History", null, (_, _) => { AddTab(""); var t = tabs.Tabs[^1]; t.Url = ""; var d = new System.Windows.Forms.Timer { Interval = 700 }; d.Tick += (_, _) => { d.Stop(); d.Dispose(); try { t.View.CoreWebView2?.NavigateToString(HistoryHtml()); } catch { } }; d.Start(); });
+        m.Items.Add("Clear history", null, (_, _) => { try { File.Delete(HistFile); } catch { } sh.Toast("History cleared"); });
+        var ab = new ToolStripMenuItem("Block ads and trackers") { Checked = Cfg.Get("adblock", "1") == "1", CheckOnClick = true }; ab.CheckedChanged += (_, _) => { Cfg.Set("adblock", ab.Checked ? "1" : "0"); sh.Toast(ab.Checked ? "Ad blocking on" : "Ad blocking off"); }; m.Items.Add(ab);
         m.Items.Add(new ToolStripSeparator());
         m.Items.Add("Downloads folder", null, (_, _) => { Directory.CreateDirectory(dlDir); U.Open(dlDir); });
         m.Items.Add("Zoom in", null, (_, _) => { var v = Cur()?.View; if (v != null) v.ZoomFactor = Math.Min(3, v.ZoomFactor + 0.1); });
