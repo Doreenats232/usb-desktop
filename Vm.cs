@@ -64,18 +64,46 @@ static class VmApp
     {
         if (Exe("qemu-system-x86_64.exe") != null) return;
         if (System.Runtime.InteropServices.RuntimeInformation.OSArchitecture != System.Runtime.InteropServices.Architecture.X64) throw new Exception("Full OS needs 64-bit Intel/AMD Windows");
-        card.Stage($"Step {step}/5 · Finding the latest QEMU…", 4);
+        card.Stage($"Step {step}/5 · QEMU not found, installing it…", 4);
         var url = await Latest("https://qemu.weilnetz.de/w64/", @"qemu-w64-setup-\d+\.exe(?![\w.])"); var inst = Path.Combine(Paths.Vm, "qemu-setup.exe");
         await Net.Download(url, inst, (g, t, s) => card.Stage($"Step {step}/5 · Downloading QEMU  {Ui.Bytes(g)}" + (t > 0 ? " of " + Ui.Bytes(t) : ""), t > 0 ? 4 + 20.0 * g / t : -1), ct);
         card.Stage($"Step {step}/5 · Installing QEMU… press Yes on the Windows prompt", 26); Directory.CreateDirectory(QemuDir);
         using var pr = Process.Start(new ProcessStartInfo(inst, "/S /D=" + QemuDir) { UseShellExecute = true, Verb = "runas" })!; await pr.WaitForExitAsync();
         try { File.Delete(inst); } catch { }
-        if (Exe("qemu-system-x86_64.exe") == null) throw new Exception("QEMU didn't install. Run the setup again and press Yes on the Windows prompt.");
+        Rescan(); if (Exe("qemu-system-x86_64.exe") == null) throw new Exception("QEMU didn't install. Run the setup again and press Yes on the Windows prompt.");
     }
     static string QemuDir => Path.Combine(Paths.Vm, "qemu");
-    static string Disk => Path.Combine(Paths.Vm, "linux.qcow2");
-    static string? Exe(string n) { foreach (var d in new[] { QemuDir, @"C:\Program Files\qemu" }) { var p = Path.Combine(d, n); if (File.Exists(p)) return p; } return null; }
-    static string? Iso() => Directory.GetFiles(Paths.Vm, "*.iso").FirstOrDefault();
+    static string DiskDefault => Path.Combine(Paths.Vm, "linux.qcow2");
+    // Uses the Linux disk already on the USB, whatever it is called.
+    static string Disk { get { try { if (File.Exists(DiskDefault)) return DiskDefault; var f = Directory.GetFiles(Paths.Vm, "*.qcow2").FirstOrDefault(x => !x.EndsWith(".part")); if (f != null) return f; } catch { } return DiskDefault; } }
+
+    static string? usbQemuDir; static bool usbScanned;
+    public static void Rescan() { usbQemuDir = null; usbScanned = false; }
+    // Finds a file anywhere on the USB (a few folders deep), skipping huge or irrelevant folders.
+    static string? FindOnUsb(string file, int depth)
+    {
+        var skip = new[] { "webview", "$RECYCLE.BIN", "System Volume Information", "Downloads", "runtime" };
+        string? Walk(string dir, int d)
+        {
+            try
+            {
+                var f = Path.Combine(dir, file); if (File.Exists(f)) return f; if (d <= 0) return null;
+                foreach (var sub in Directory.EnumerateDirectories(dir)) { if (skip.Contains(Path.GetFileName(sub), StringComparer.OrdinalIgnoreCase)) continue; var r = Walk(sub, d - 1); if (r != null) return r; }
+            }
+            catch { }
+            return null;
+        }
+        var root = Path.GetPathRoot(Paths.Root) ?? Paths.Root; var hit = Walk(Paths.Root, depth); if (hit == null && root != Paths.Root) hit = Walk(root, depth); return hit;
+    }
+    static string? Exe(string n)
+    {
+        foreach (var d in new[] { QemuDir, usbQemuDir ?? "", @"C:\Program Files\qemu", @"C:\Program Files (x86)\qemu" }) { if (d == "") continue; var p = Path.Combine(d, n); if (File.Exists(p)) return p; }
+        foreach (var d in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';')) { try { if (d.Trim() != "") { var p = Path.Combine(d.Trim(), n); if (File.Exists(p)) return p; } } catch { } }
+        if (!usbScanned) { usbScanned = true; var hit = FindOnUsb("qemu-system-x86_64.exe", 5); if (hit != null) { usbQemuDir = Path.GetDirectoryName(hit); return Path.Combine(usbQemuDir!, n) is var q && File.Exists(q) ? q : hit; } }
+        else if (usbQemuDir != null) { var p = Path.Combine(usbQemuDir, n); if (File.Exists(p)) return p; }
+        return null;
+    }
+    static string? Iso() { try { return Directory.GetFiles(Paths.Vm, "*.iso").FirstOrDefault() ?? Directory.GetFiles(Paths.Root, "*.iso").FirstOrDefault(); } catch { return null; } }
 
     static async Task<string> Latest(string dir, string pattern)
     {
@@ -99,6 +127,7 @@ static class VmApp
         pg.P("1  QEMU engine", false, true, 11, 12); s1 = pg.P("", true); var r1 = pg.Row(2);
         B(r1, "Install QEMU", async () =>
         {
+            if (Exe("qemu-system-x86_64.exe") != null) { st.Text = "QEMU is already on your USB. Nothing to install."; return; }
             if (System.Runtime.InteropServices.RuntimeInformation.OSArchitecture != System.Runtime.InteropServices.Architecture.X64) throw new Exception("Full OS needs 64-bit Intel/AMD Windows");
             var url = await Latest("https://qemu.weilnetz.de/w64/", @"qemu-w64-setup-\d+\.exe(?![\w.])"); var inst = Path.Combine(Paths.Vm, "qemu-setup.exe");
             if (!await Dl(sh, url, inst, "QEMU installer")) return; st.Text = "Approve the Windows prompt to finish installing…"; Directory.CreateDirectory(QemuDir);
@@ -161,8 +190,9 @@ static class VmApp
             var cts = new CancellationTokenSource(); var card = sh.NewDl("Setting up Full OS", cts, "");
             try
             {
-                card.Stage("Step 1/5 · Looking for what's already on your USB…", 2); await Task.Delay(700);
-                bool hadDisk = File.Exists(Disk);
+                card.Stage("Step 1/5 · Looking for what's already on your USB…", 2); Rescan();
+                var foundQ = await Task.Run(() => Exe("qemu-system-x86_64.exe")); bool hadDisk = File.Exists(Disk); var foundIso = Iso();
+                card.Stage("Step 1/5 · Found on your USB:  QEMU " + (foundQ != null ? "yes" : "no") + "  ·  Linux disk " + (hadDisk ? "yes" : "no") + "  ·  installer ISO " + (foundIso != null ? "yes" : "no"), 6); await Task.Delay(1800);
                 await EnsureQemu(card, 2, cts.Token);
                 bool fresh = !hadDisk;
                 if (hadDisk) { int c = Ask.Choose("A Linux disk is already on this USB", "Keep using it, or start over with a fresh Linux?", "Keep using it", "Replace with a fresh Linux"); if (c < 0) { card.Fail("Cancelled"); return; } fresh = c == 1; }
@@ -172,12 +202,12 @@ static class VmApp
                     int style = Ask.Choose("What kind of Linux?", "Desktop looks like a normal PC with windows, icons and a web browser. Terminal is smaller and starts faster.", "Desktop (XFCE)", "Terminal only"); if (style < 0) { card.Fail("Cancelled"); return; }
                     int size = Ask.Choose("How much space?", "This is just a file on your USB and it only grows as you use it.", "8 GB", "16 GB", "32 GB"); if (size < 0) { card.Fail("Cancelled"); return; }
                     var pw = Ask.Password("Choose a Linux password", "You'll log in as  user  with this password."); if (string.IsNullOrEmpty(pw)) { card.Fail("Cancelled"); return; }
-                    var part = Disk + ".part";
+                    var part = DiskDefault + ".part"; var oldDisk = Disk;
                     await Net.Download("https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2", part, (g, t, s) => card.Stage($"Step 4/5 · Downloading Linux  {Ui.Bytes(g)}" + (t > 0 ? " of " + Ui.Bytes(t) : "") + $"  ·  {Ui.Bytes((long)s)}/s", t > 0 ? 30 + 56.0 * g / t : -1), cts.Token);
                     card.Stage("Step 4/5 · Preparing your disk…", 88);
-                    if (File.Exists(Disk)) File.Delete(Disk); File.Move(part, Disk); try { File.Delete(FlagFile); } catch { }
+                    if (File.Exists(DiskDefault)) File.Delete(DiskDefault); File.Move(part, DiskDefault); try { File.Delete(FlagFile); } catch { }
                     var img = Exe("qemu-img.exe") ?? throw new Exception("qemu-img is missing. Reinstall QEMU.");
-                    using (var pr = Process.Start(new ProcessStartInfo(img) { ArgumentList = { "resize", Disk, new[] { 8, 16, 32 }[size] + "G" }, CreateNoWindow = true, UseShellExecute = false })!) await pr.WaitForExitAsync();
+                    using (var pr = Process.Start(new ProcessStartInfo(img) { ArgumentList = { "resize", DiskDefault, new[] { 8, 16, 32 }[size] + "G" }, CreateNoWindow = true, UseShellExecute = false })!) await pr.WaitForExitAsync();
                     pendingPw = pw; pendingDesk = style == 0;
                 }
                 card.Stage("Step 5/5 · Starting Linux…", 96); Cfg.Set("vm_boot", "0"); boot.SelectedIndex = 0; Refresh(); await Task.Delay(500);
