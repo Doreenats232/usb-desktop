@@ -31,13 +31,15 @@ static class VmApp
     const int SeedPort = 45518;
 
     // Tiny local web server that hands Linux its first-boot settings (user, password, desktop) so nothing has to be typed inside the VM.
-    static void StartSeed(string pw, bool desktop)
+    static void StartSeed(string pw, bool desktop, string distro)
     {
-        string user = "user"; var ud = new StringBuilder("#cloud-config\nhostname: usb-linux\nusers:\n  - name: " + user + "\n    gecos: USB Desktop user\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: /bin/bash\n    groups: [sudo]\n    lock_passwd: false\n");
+        string user = "user"; var ud = new StringBuilder("#cloud-config\nhostname: usb-linux\nusers:\n  - name: " + user + "\n    gecos: USB Desktop user\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: /bin/bash
+    groups: [" + (distro == "alpine" ? "wheel" : "sudo") + "]
+    lock_passwd: false\n");
         ud.Append("chpasswd:\n  expire: false\n  list: |\n    " + user + ":" + pw.Replace("\n", "") + "\nssh_pwauth: true\n");
         if (desktop)
         {
-            ud.Append("package_update: true\npackages:\n  - xorg\n  - xfce4\n  - xfce4-terminal\n  - lightdm\n  - firefox-esr\n  - dbus-x11\n");
+            ud.Append("package_update: true\npackages:\n  - xorg\n  - xfce4\n  - xfce4-terminal\n  - lightdm\n  - lightdm-gtk-greeter\n  - " + (distro == "ubuntu" ? "falkon" : "firefox-esr") + "\n  - dbus-x11\n");
             ud.Append("write_files:\n  - path: /etc/lightdm/lightdm.conf.d/50-autologin.conf\n    content: |\n      [Seat:*]\n      autologin-user=" + user + "\n      autologin-user-timeout=0\n");
             ud.Append("runcmd:\n  - [ systemctl, set-default, graphical.target ]\n  - [ systemctl, enable, lightdm ]\n  - [ systemctl, start, lightdm ]\n");
         }
@@ -64,18 +66,64 @@ static class VmApp
     {
         if (Exe("qemu-system-x86_64.exe") != null) return;
         if (System.Runtime.InteropServices.RuntimeInformation.OSArchitecture != System.Runtime.InteropServices.Architecture.X64) throw new Exception("Full OS needs 64-bit Intel/AMD Windows");
-        card.Stage($"Step {step}/5 · QEMU not found, installing it…", 4);
+        card.Stage($"Step {step}/5 · QEMU not found, installing it…", 10);
         var url = await Latest("https://qemu.weilnetz.de/w64/", @"qemu-w64-setup-\d+\.exe(?![\w.])"); var inst = Path.Combine(Paths.Vm, "qemu-setup.exe");
-        await Net.Download(url, inst, (g, t, s) => card.Stage($"Step {step}/5 · Downloading QEMU  {Ui.Bytes(g)}" + (t > 0 ? " of " + Ui.Bytes(t) : ""), t > 0 ? 4 + 20.0 * g / t : -1), ct);
+        await Net.Download(url, inst, (g, t, s) => card.Stage($"Step {step}/5 · Downloading QEMU  {Ui.Bytes(g)}" + (t > 0 ? " of " + Ui.Bytes(t) : ""), t > 0 ? 10 + 14.0 * g / t : -1), ct);
         card.Stage($"Step {step}/5 · Installing QEMU… press Yes on the Windows prompt", 26); Directory.CreateDirectory(QemuDir);
         using var pr = Process.Start(new ProcessStartInfo(inst, "/S /D=" + QemuDir) { UseShellExecute = true, Verb = "runas" })!; await pr.WaitForExitAsync();
         try { File.Delete(inst); } catch { }
         Rescan(); if (Exe("qemu-system-x86_64.exe") == null) throw new Exception("QEMU didn't install. Run the setup again and press Yes on the Windows prompt.");
     }
     static string QemuDir => Path.Combine(Paths.Vm, "qemu");
-    static string DiskDefault => Path.Combine(Paths.Vm, "linux.qcow2");
-    // Uses the Linux disk already on the USB, whatever it is called.
-    static string Disk { get { try { if (File.Exists(DiskDefault)) return DiskDefault; var f = Directory.GetFiles(Paths.Vm, "*.qcow2").FirstOrDefault(x => !x.EndsWith(".part")); if (f != null) return f; } catch { } return DiskDefault; } }
+    static string CurId => Cfg.Get("vm_distro", "debian");
+    static string DiskFor(string id) { var p = Path.Combine(Paths.Vm, $"linux-{id}.qcow2"); var legacy = Path.Combine(Paths.Vm, "linux.qcow2"); return id == "debian" && !File.Exists(p) && File.Exists(legacy) ? legacy : p; }
+    static string DiskDefault => DiskFor(CurId);
+    static string Disk => DiskDefault;
+
+    class Distro { public string Id = "", Name = "", Note = "", Kind = "cloud", Url = "", Dir = "", Pattern = ""; public int NeedGb; public bool Desktop; }
+    static readonly Distro[] Distros =
+    {
+        new() { Id = "debian", Name = "Debian 12", Note = "stable and simple, desktop or terminal", Kind = "cloud", Url = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2", NeedGb = 6, Desktop = true },
+        new() { Id = "ubuntu", Name = "Ubuntu 24.04", Note = "the most popular, desktop or terminal", Kind = "cloud", Url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img", NeedGb = 8, Desktop = true },
+        new() { Id = "alpine", Name = "Alpine Linux", Note = "tiny and very fast, terminal only", Kind = "cloud", Dir = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/cloud/", Pattern = @"nocloud_alpine-\d+\.\d+\.\d+-x86_64-bios-cloudinit-r\d+\.qcow2", NeedGb = 3, Desktop = false },
+        new() { Id = "kali", Name = "Kali Linux", Note = "security tools with a ready desktop, big download (about 25 GB of space)", Kind = "kali", Dir = "https://cdimage.kali.org/current/", Pattern = @"kali-linux-\d{4}\.\d+-qemu-amd64\.7z", NeedGb = 28, Desktop = true },
+    };
+    static string pendingDistro = "debian";
+
+    static void EnsureSpace(int gb)
+    {
+        try { var d = new DriveInfo(Path.GetPathRoot(Paths.Root)!); if (d.AvailableFreeSpace < (long)gb * 1073741824) throw new Exception($"Not enough space on the USB. This Linux needs about {gb} GB free, and only {d.AvailableFreeSpace / 1073741824} GB is free."); }
+        catch (IOException) { }
+    }
+
+    static async Task GetDistro(DlCard card, Distro d, int gb, CancellationToken ct)
+    {
+        var url = d.Url != "" ? d.Url : await Latest(d.Dir, d.Pattern); var target = DiskFor(d.Id);
+        if (d.Kind == "kali")
+        {
+            var arc = Path.Combine(Paths.Vm, "kali.7z"); 
+            await Net.Download(url, arc, (g, t, s) => card.Stage($"Step 4/5 · Downloading Kali  {Ui.Bytes(g)}" + (t > 0 ? " of " + Ui.Bytes(t) : "") + $"  ·  {Ui.Bytes((long)s)}/s", t > 0 ? 28 + 40.0 * g / t : -1), ct);
+            var z = Path.Combine(Paths.Vm, "7zr.exe"); if (!File.Exists(z)) await Net.Download("https://www.7-zip.org/a/7zr.exe", z, (g, t, s) => { }, ct);
+            var tmp = Path.Combine(Paths.Vm, "kali-unpack"); try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { } Directory.CreateDirectory(tmp);
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                var psi = new ProcessStartInfo(z) { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
+                foreach (var x in attempt == 0 ? new[] { "x", arc, "-o" + tmp, "-y", "-bsp1" } : new[] { "x", arc, "-o" + tmp, "-y" }) psi.ArgumentList.Add(x);
+                using var pr = Process.Start(psi)!; var buf = new char[256]; int last = 0;
+                while (true) { int n = await pr.StandardOutput.ReadAsync(buf, 0, buf.Length); if (n <= 0) break; var m = Regex.Matches(new string(buf, 0, n), @"(\d+)%"); if (m.Count > 0) last = int.Parse(m[^1].Groups[1].Value); card.Stage(attempt == 0 ? $"Step 4/5 · Unpacking Kali… {last}%  (a few minutes)" : "Step 4/5 · Unpacking Kali… (a few minutes)", attempt == 0 ? 68 + 20.0 * last / 100 : -1); ct.ThrowIfCancellationRequested(); }
+                await pr.WaitForExitAsync(); if (pr.ExitCode == 0) break; if (attempt == 1) throw new Exception("Couldn't unpack Kali. The download may be damaged. Try again.");
+            }
+            var q = Directory.GetFiles(tmp, "*.qcow2", SearchOption.AllDirectories).FirstOrDefault() ?? throw new Exception("Kali unpacked but no disk file was found inside.");
+            if (File.Exists(target)) File.Delete(target); File.Move(q, target); try { Directory.Delete(tmp, true); File.Delete(arc); } catch { }
+            return;
+        }
+        var part = target + ".part";
+        await Net.Download(url, part, (g, t, s) => card.Stage($"Step 4/5 · Downloading {d.Name}  {Ui.Bytes(g)}" + (t > 0 ? " of " + Ui.Bytes(t) : "") + $"  ·  {Ui.Bytes((long)s)}/s", t > 0 ? 28 + 58.0 * g / t : -1), ct);
+        card.Stage("Step 4/5 · Preparing your disk…", 88);
+        if (File.Exists(target)) File.Delete(target); File.Move(part, target); try { File.Delete(FlagFile); } catch { }
+        var img = Exe("qemu-img.exe") ?? throw new Exception("qemu-img is missing. Reinstall QEMU.");
+        using var rp = Process.Start(new ProcessStartInfo(img) { ArgumentList = { "resize", target, gb + "G" }, CreateNoWindow = true, UseShellExecute = false })!; await rp.WaitForExitAsync();
+    }
 
     static string? usbQemuDir; static bool usbScanned;
     public static void Rescan() { usbQemuDir = null; usbScanned = false; }
@@ -168,7 +216,7 @@ static class VmApp
             var exe = Exe("qemu-system-x86_64.exe")!; var psi = new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe)!, UseShellExecute = false };
             foreach (var a in new[] { "-m", ram.Value.ToString(), "-smp", cpu.Value.ToString(), "-accel", "whpx,kernel-irqchip=off", "-accel", "tcg", "-drive", $"file={Disk},format=qcow2,if=virtio", "-nic", "user,model=virtio-net-pci", "-device", "qemu-xhci", "-device", "usb-tablet", "-vga", "std", "-name", "USB Desktop Linux" }) psi.ArgumentList.Add(a);
             if (boot.SelectedIndex == 1 && Iso() != null) { psi.ArgumentList.Add("-cdrom"); psi.ArgumentList.Add(Iso()!); psi.ArgumentList.Add("-boot"); psi.ArgumentList.Add("d"); }
-            if (pendingPw != null) { StartSeed(pendingPw, pendingDesk); pendingPw = null; psi.ArgumentList.Add("-smbios"); psi.ArgumentList.Add("type=1,serial=ds=nocloud-net;s=http://10.0.2.2:" + SeedPort + "/"); }
+            if (pendingPw != null) { StartSeed(pendingPw, pendingDesk, pendingDistro); pendingPw = null; psi.ArgumentList.Add("-smbios"); psi.ArgumentList.Add("type=1,serial=ds=nocloud-net;s=http://10.0.2.2:" + SeedPort + "/"); }
             psi.ArgumentList.Add("-monitor"); psi.ArgumentList.Add($"tcp:127.0.0.1:{MonPort},server,nowait");
             bool resuming = Frozen; var t0 = DateTime.Now; if (resuming) { psi.ArgumentList.Add("-loadvm"); psi.ArgumentList.Add("sleep"); try { File.Delete(FlagFile); } catch { } }
             run = Process.Start(psi); run!.EnableRaisingEvents = true; if (resuming) run.Exited += (_, _) => { if ((DateTime.Now - t0).TotalSeconds < 20 && !p.IsDisposed) p.BeginInvoke(new Action(() => st.Text = "Couldn't resume the saved Linux. Press Start to boot it fresh.")); }; run.Exited += (_, _) => { if (!p.IsDisposed) p.BeginInvoke(new Action(Refresh)); };
@@ -181,7 +229,7 @@ static class VmApp
         {
             if (p.IsDisposed) return;
             bool q = Exe("qemu-system-x86_64.exe") != null, d = File.Exists(Disk), i = Iso() != null, on = run is { HasExited: false };
-            s1.Text = q ? "Installed" : "Not installed yet"; s2.Text = i ? Path.GetFileName(Iso()!) : "No installer downloaded yet"; s3.Text = d ? $"linux.qcow2 ({new FileInfo(Disk).Length / 1048576} MB used)" : "No disk yet";
+            s1.Text = q ? "Installed" : "Not installed yet"; s2.Text = i ? Path.GetFileName(Iso()!) : "No installer downloaded yet"; s3.Text = d ? $"{Path.GetFileName(Disk)} ({new FileInfo(Disk).Length / 1048576} MB used)" : "No disk yet";
             s1.ForeColor = q ? Color.FromArgb(110, 231, 160) : Ui.Sub; s2.ForeColor = i ? Color.FromArgb(110, 231, 160) : Ui.Sub; s3.ForeColor = d ? Color.FromArgb(110, 231, 160) : Ui.Sub;
             start.Enabled = q && d && !on && (boot.SelectedIndex == 0 || i); stop.Enabled = on; if (on) st.Text = "Linux is running";
         }
@@ -191,29 +239,33 @@ static class VmApp
             try
             {
                 card.Stage("Step 1/5 · Looking for what's already on your USB…", 2); Rescan();
-                var foundQ = await Task.Run(() => Exe("qemu-system-x86_64.exe")); bool hadDisk = File.Exists(Disk); var foundIso = Iso();
-                card.Stage("Step 1/5 · Found on your USB:  QEMU " + (foundQ != null ? "yes" : "no") + "  ·  Linux disk " + (hadDisk ? "yes" : "no") + "  ·  installer ISO " + (foundIso != null ? "yes" : "no"), 6); await Task.Delay(1800);
-                await EnsureQemu(card, 2, cts.Token);
-                bool fresh = !hadDisk;
-                if (hadDisk) { int c = Ask.Choose("A Linux disk is already on this USB", "Keep using it, or start over with a fresh Linux?", "Keep using it", "Replace with a fresh Linux"); if (c < 0) { card.Fail("Cancelled"); return; } fresh = c == 1; }
+                var foundQ = await Task.Run(() => Exe("qemu-system-x86_64.exe")); var foundIso = Iso();
+                var have = Distros.Where(x => File.Exists(DiskFor(x.Id))).Select(x => x.Name).ToList();
+                card.Stage("Step 1/5 · Found on your USB:  QEMU " + (foundQ != null ? "yes" : "no") + "  ·  Linux: " + (have.Count > 0 ? string.Join(", ", have) : "none yet") + (foundIso != null ? "  ·  installer ISO yes" : ""), 6); await Task.Delay(1800);
+                card.Stage("Step 2/5 · A few quick questions…", 8);
+                int di = Ask.Choose("Choose your Linux", string.Join("\n", Distros.Select(x => x.Name + ": " + x.Note + ".")) + "\n\nOnes already on your USB are marked.", Distros.Select(x => x.Name + (File.Exists(DiskFor(x.Id)) ? "   (on your USB)" : "")).ToArray());
+                if (di < 0) { card.Fail("Cancelled"); return; }
+                var dist = Distros[di]; Cfg.Set("vm_distro", dist.Id); pendingDistro = dist.Id;
+                bool hadDisk = File.Exists(DiskFor(dist.Id)); bool fresh = !hadDisk; bool desk = dist.Desktop && dist.Kind != "kali"; int gb = 16; string pw = "";
+                if (hadDisk) { int c = Ask.Choose(dist.Name + " is already on this USB", "Keep using it, or start over with a fresh one?", "Keep using it", "Replace with a fresh one"); if (c < 0) { card.Fail("Cancelled"); return; } fresh = c == 1; }
+                if (fresh && dist.Kind == "cloud")
+                {
+                    if (dist.Desktop) { int style = Ask.Choose("What kind of " + dist.Name + "?", "Desktop looks like a normal PC with windows, icons and a web browser. Terminal is smaller and starts faster.", "Desktop (XFCE)", "Terminal only"); if (style < 0) { card.Fail("Cancelled"); return; } desk = style == 0; }
+                    int size = Ask.Choose("How much space?", "This is just a file on your USB and it only grows as you use it.", "8 GB", "16 GB", "32 GB"); if (size < 0) { card.Fail("Cancelled"); return; } gb = new[] { 8, 16, 32 }[size];
+                    pw = Ask.Password("Choose a Linux password", "You'll log in as  user  with this password.") ?? ""; if (pw == "") { card.Fail("Cancelled"); return; }
+                }
+                if (fresh) EnsureSpace(dist.NeedGb + (desk ? 3 : 0));
+                await EnsureQemu(card, 3, cts.Token);
                 if (fresh)
                 {
-                    card.Stage("Step 3/5 · A few quick questions…", 28);
-                    int style = Ask.Choose("What kind of Linux?", "Desktop looks like a normal PC with windows, icons and a web browser. Terminal is smaller and starts faster.", "Desktop (XFCE)", "Terminal only"); if (style < 0) { card.Fail("Cancelled"); return; }
-                    int size = Ask.Choose("How much space?", "This is just a file on your USB and it only grows as you use it.", "8 GB", "16 GB", "32 GB"); if (size < 0) { card.Fail("Cancelled"); return; }
-                    var pw = Ask.Password("Choose a Linux password", "You'll log in as  user  with this password."); if (string.IsNullOrEmpty(pw)) { card.Fail("Cancelled"); return; }
-                    var part = DiskDefault + ".part"; var oldDisk = Disk;
-                    await Net.Download("https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2", part, (g, t, s) => card.Stage($"Step 4/5 · Downloading Linux  {Ui.Bytes(g)}" + (t > 0 ? " of " + Ui.Bytes(t) : "") + $"  ·  {Ui.Bytes((long)s)}/s", t > 0 ? 30 + 56.0 * g / t : -1), cts.Token);
-                    card.Stage("Step 4/5 · Preparing your disk…", 88);
-                    if (File.Exists(DiskDefault)) File.Delete(DiskDefault); File.Move(part, DiskDefault); try { File.Delete(FlagFile); } catch { }
-                    var img = Exe("qemu-img.exe") ?? throw new Exception("qemu-img is missing. Reinstall QEMU.");
-                    using (var pr = Process.Start(new ProcessStartInfo(img) { ArgumentList = { "resize", DiskDefault, new[] { 8, 16, 32 }[size] + "G" }, CreateNoWindow = true, UseShellExecute = false })!) await pr.WaitForExitAsync();
-                    pendingPw = pw; pendingDesk = style == 0;
+                    await GetDistro(card, dist, gb, cts.Token);
+                    if (dist.Kind == "cloud") { pendingPw = pw; pendingDesk = desk; }
+                    if (dist.Kind == "kali" && ram.Value < 4096) ram.Value = 4096;
                 }
-                card.Stage("Step 5/5 · Starting Linux…", 96); Cfg.Set("vm_boot", "0"); boot.SelectedIndex = 0; Refresh(); await Task.Delay(500);
-                if (!start.Enabled) throw new Exception("Everything downloaded but Linux couldn't start. Press Start Full OS below.");
+                card.Stage("Step 5/5 · Starting " + dist.Name + "…", 96); Cfg.Set("vm_boot", "0"); boot.SelectedIndex = 0; Refresh(); await Task.Delay(500);
+                if (!start.Enabled) throw new Exception("Everything is ready but Linux couldn't start. Press Start Full OS below.");
                 start.PerformClick();
-                card.Done(fresh ? "Linux is starting. The first start takes several minutes while it sets itself up. Log in as user." : "Linux is starting.");
+                card.Done(fresh ? (dist.Kind == "kali" ? "Kali is starting. Log in with  kali  /  kali." : dist.Name + " is starting. The first start takes several minutes while it sets itself up. Log in as  user.") : dist.Name + " is starting.");
             }
             catch (OperationCanceledException) { card.Fail("Cancelled"); }
             catch (Exception ex) { card.Fail(ex.Message); }
