@@ -89,7 +89,7 @@ static class Web
     static async Task<CoreWebView2Environment> Env()
     {
         if (env != null) return env;
-        var dirs = new[] { Path.Combine(Paths.Data, "webview"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UsbDesktop", "webview") };
+        var dirs = School.Dirs(Path.Combine(Paths.Data, "webview"), "webview");
         Exception? last = null;
         foreach (var d in dirs)
         {
@@ -161,7 +161,7 @@ static class Web
     {
         try
         {
-            if (!url.StartsWith("http")) return; var l = File.Exists(HistFile) ? File.ReadAllLines(HistFile).ToList() : new List<string>();
+            if (School.On || !url.StartsWith("http")) return; var l = File.Exists(HistFile) ? File.ReadAllLines(HistFile).ToList() : new List<string>();
             l.Add(DateTime.Now.Ticks + "\t" + title.Replace('\t', ' ').Replace('\n', ' ') + "\t" + url); if (l.Count > 2000) l = l.Skip(l.Count - 2000).ToList(); File.WriteAllLines(HistFile, l);
         }
         catch { }
@@ -425,7 +425,19 @@ input:hover,input:focus{box-shadow:0 2px 12px rgba(32,33,36,.26);border-color:tr
         void Build()
         {
             p.Controls.Clear(); var u = Cfg.Get("store_url");
-            if (u != "") { var b = Browser(sh, u, Paths.Apps, true); b.Dock = DockStyle.Fill; p.Controls.Add(b); return; }
+            if (u != "")
+            {
+                void OpenWeb() { p.Controls.Clear(); var wb = Browser(sh, u, Paths.Apps, true); wb.Dock = DockStyle.Fill; p.Controls.Add(wb); }
+                if (Cfg.Get("store_native", "1") != "1") { OpenWeb(); return; }
+                var lbl = new Label { Text = "Loading store…", AutoSize = true, ForeColor = Ui.Sub, Font = Ui.F(11), Location = new Point(Ui.D(28), Ui.D(24)) }; p.Controls.Add(lbl);
+                _ = Task.Run(async () =>
+                {
+                    Control? n = null; try { n = await StoreList.TryBuild(sh, u, () => p.BeginInvoke(new Action(OpenWeb))); } catch { }
+                    if (p.IsDisposed) return;
+                    p.BeginInvoke(new Action(() => { if (n == null) { OpenWeb(); return; } p.Controls.Clear(); n.Dock = DockStyle.Fill; p.Controls.Add(n); }));
+                });
+                return;
+            }
             var pg = new PagePanel(); pg.H("MLD Store"); pg.P("Type your store's website address. Apps you download there install straight into your Start menu, with live progress.", true);
             var row = pg.Row(14); var (box, tb) = pg.Field(row, "https://your-store.example.com", 440);
             pg.Btn(row, "Open store", () => { if (tb.Text.Trim() != "") { Cfg.Set("store_url", tb.Text.Trim()); Build(); } }).Margin = new Padding(0, 0, 0, Ui.D(6));

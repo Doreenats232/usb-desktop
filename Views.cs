@@ -222,6 +222,7 @@ static class Views
                         th.Click += (_, _) => { Cfg.Set("wp", idx.ToString()); Cfg.Set("wallimg", ""); sh.ApplyLook(); show(0); };
                         grid.Controls.Add(th);
                     }
+                    pg.Gap(6); pg.Switch("Light theme (close and reopen USB Desktop to apply everywhere)", Cfg.Get("light", "0") == "1", on => { Cfg.Set("light", on ? "1" : "0"); sh.Toast("Light theme " + (on ? "on" : "off") + ". Restart USB Desktop to apply."); });
                     pg.P("Accent colour", false, true, 11, 12); var sw = pg.Row(4);
                     foreach (var (nm, hx) in new[] { ("Wallpaper", ""), ("Blue", "#4F8CFF"), ("Purple", "#8B5CF6"), ("Pink", "#EC4899"), ("Green", "#22C55E"), ("Orange", "#F97316"), ("Red", "#EF4444") })
                     {
@@ -291,6 +292,9 @@ static class Views
                     pg.Switch("Sleep instead of shut down (resume on any PC)", Cfg.Get("sleep", "0") == "1", on => Cfg.Set("sleep", on ? "1" : "0"));
                     pg.P("Sleep saves your open windows and browser tabs, encrypted with your login password, and brings them back the next time you sign in, on any computer. Apps already open on the PC itself (like its own Chrome) can't be saved.", true, false, 10, 6);
                     pg.P("Passwords are salted and hashed (PBKDF2). Change yours in Accounts.", true, false, 10, 12);
+                    pg.Switch("School mode (leave less trace on the PC)", Cfg.Get("school", "0") == "1", on => { Cfg.Set("school", on ? "1" : "0"); sh.Toast("School mode " + (on ? "on" : "off") + ". Restart USB Desktop to fully apply."); });
+                    pg.P("School mode never writes to the PC's own profile folders, doesn't save browser history, and when you close the desktop it clears the clipboard and deletes any leftovers this app made on the PC. Your files and logins stay on the USB. It can't hide that a USB was plugged in or that a program ran, which Windows and school filters may still log.", true, false, 10, 8);
+                    var rs = pg.Row(4); pg.Btn(rs, "Clear traces on this PC now", () => { School.Cleanup(true); sh.Toast("Cleared"); }, false);
                     break;
                 }
                 case 6:

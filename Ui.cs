@@ -11,8 +11,14 @@ static class Ui
     public static int Unscale(int v) => (int)Math.Round(v / S);
     public static Size D(int w, int h) => new(D(w), D(h));
     public static Font F(float pt, bool bold = false) => new("Segoe UI", pt, bold ? FontStyle.Bold : FontStyle.Regular);
-    public static readonly Color Bg = Color.FromArgb(14, 15, 28), Surface = Color.FromArgb(23, 24, 41), Surface2 = Color.FromArgb(34, 36, 58),
-        Line = Color.FromArgb(52, 55, 86), Text = Color.FromArgb(241, 242, 250), Sub = Color.FromArgb(165, 168, 200);
+    public static bool Light => Cfg.Get("light", "0") == "1";
+    public static Color Bg => Light ? Color.FromArgb(238, 240, 248) : Color.FromArgb(14, 15, 28);
+    public static Color Surface => Light ? Color.FromArgb(255, 255, 255) : Color.FromArgb(23, 24, 41);
+    public static Color Surface2 => Light ? Color.FromArgb(232, 235, 246) : Color.FromArgb(34, 36, 58);
+    public static Color Line => Light ? Color.FromArgb(206, 211, 232) : Color.FromArgb(52, 55, 86);
+    public static Color Text => Light ? Color.FromArgb(24, 26, 44) : Color.FromArgb(241, 242, 250);
+    public static Color Sub => Light ? Color.FromArgb(96, 101, 132) : Color.FromArgb(165, 168, 200);
+    public static Color Sel => Light ? Color.FromArgb(205, 212, 242) : Color.FromArgb(62, 66, 104);
     public static Color PBg(Control c, Color fb) { var p = c.Parent; if (p is RoundPanel rp) return rp.Fill; var bc = p?.BackColor ?? fb; return bc.A < 255 ? fb : bc; }
     public static void Dark(Control c) => DarkTheme(c);
     public static Color Accent => Theme.Accent;
@@ -24,7 +30,7 @@ static class Ui
     [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)] static extern int SetWindowTheme(IntPtr h, string app, string? list);
     static void DarkTheme(Control c)
     {
-        void Do() { try { SetWindowTheme(c.Handle, "DarkMode_Explorer", null); } catch { } }
+        void Do() { try { SetWindowTheme(c.Handle, Light ? "Explorer" : "DarkMode_Explorer", null); } catch { } }
         c.HandleCreated += (_, _) => Do(); if (c.IsHandleCreated) Do();
     }
 
@@ -54,7 +60,7 @@ static class Ui
     static void One(Control k)
     {
         if (k is RoundButton || k is RoundPanel) return;
-        if (k is Label l) { if (l.ForeColor.GetBrightness() < 0.4f) l.ForeColor = Text; l.BackColor = Color.Transparent; }
+        if (k is Label l) { if (Light ? l.ForeColor.GetBrightness() > 0.6f : l.ForeColor.GetBrightness() < 0.4f) l.ForeColor = Text; l.BackColor = Color.Transparent; }
         else if (k is TextBox t) { t.BackColor = Surface2; t.ForeColor = Text; }
         else if (k is ListView lv) { lv.BackColor = Surface; lv.ForeColor = Text; lv.BorderStyle = BorderStyle.None; DarkTheme(lv); }
         else if (k is NumericUpDown || k is ComboBox || k is ListBox) { k.BackColor = Surface2; k.ForeColor = Text; }
@@ -77,8 +83,8 @@ class DarkColors : ProfessionalColorTable
 {
     public override Color ToolStripDropDownBackground => Ui.Surface2;
     public override Color ImageMarginGradientBegin => Ui.Surface2; public override Color ImageMarginGradientMiddle => Ui.Surface2; public override Color ImageMarginGradientEnd => Ui.Surface2;
-    public override Color MenuItemSelected => Color.FromArgb(62, 66, 104); public override Color MenuItemBorder => Color.FromArgb(62, 66, 104);
-    public override Color MenuItemSelectedGradientBegin => Color.FromArgb(62, 66, 104); public override Color MenuItemSelectedGradientEnd => Color.FromArgb(62, 66, 104);
+    public override Color MenuItemSelected => Ui.Sel; public override Color MenuItemBorder => Ui.Sel;
+    public override Color MenuItemSelectedGradientBegin => Ui.Sel; public override Color MenuItemSelectedGradientEnd => Ui.Sel;
     public override Color MenuBorder => Ui.Line; public override Color SeparatorDark => Ui.Line; public override Color SeparatorLight => Ui.Line;
     public override Color MenuStripGradientBegin => Ui.Surface2; public override Color MenuStripGradientEnd => Ui.Surface2;
 }

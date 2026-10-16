@@ -12,7 +12,7 @@ static class Native
         {
             using var s = typeof(Program).Assembly.GetManifestResourceStream("WebView2Loader.x86.dll");
             if (s == null) return;
-            var dirs = new[] { Path.Combine(Paths.Data, "runtime"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UsbDesktop", "runtime") };
+            var dirs = School.Dirs(Path.Combine(Paths.Data, "runtime"), "runtime");
             foreach (var d in dirs)
             {
                 try

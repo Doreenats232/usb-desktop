@@ -149,7 +149,7 @@ class DesktopForm : Form
 
     static readonly (string N, string K)[] Catalog =
     {
-        ("Files", "files"), ("Full OS", "vm"), ("Notepad", "notepad"), ("Calculator", "calc"), ("Paint", "paint"), ("Terminal", "term"), ("Settings", "settings"),
+        ("Files", "files"), ("Full OS", "vm"), ("Notepad", "notepad"), ("Code Editor", "code"), ("Calculator", "calc"), ("Paint", "paint"), ("Terminal", "term"), ("Settings", "settings"),
         ("Browser", "web"), ("Screenshot", "shot"), ("Recycle Bin", "bin"), ("MLD Store", "store"), ("Task Manager", "tm"), ("Vault", "vault"),
     };
     public static string IconKey(string k) => k switch { "files" => "folder", "web" => "browser", _ => k };
@@ -186,7 +186,7 @@ class DesktopForm : Form
         KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) HideMenu(); };
         tm.Tick += (_, _) => Tick(); tm.Start();
         Load += (_, _) => { ApplyLook(); ApplyWidgets(); LayoutBar(); Tick(); };
-        FormClosing += (_, _) => { if (Cfg.Get("sleep", "0") == "1") { if (VmApp.Running) Task.Run(VmApp.Freeze).GetAwaiter().GetResult(); SaveState(); } };
+        FormClosing += (_, _) => { School.Cleanup(); if (Cfg.Get("sleep", "0") == "1") { if (VmApp.Running) Task.Run(VmApp.Freeze).GetAwaiter().GetResult(); SaveState(); } };
         Shown += async (_, _) =>
         {
             var sp = new Splash(ClientSize); Controls.Add(sp); sp.BringToFront(); Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " ");
@@ -370,7 +370,7 @@ class DesktopForm : Form
         if (new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif" }.Contains(ext)) { Launch("photo", p); return; }
         if (new[] { ".pdf", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".svg", ".webp", ".opus" }.Contains(ext)) { Launch("web", new Uri(p).AbsoluteUri); return; }
         if (ext == ".zip") { _ = ExtractHere(p); return; }
-        if (new[] { ".txt", ".md", ".json", ".js", ".cs", ".log", ".ini", ".html", ".css", ".py", ".bat" }.Contains(ext)) Launch("notepad", p); else U.Open(p);
+        if (new[] { ".js", ".cs", ".html", ".css", ".py", ".bat", ".ts", ".java", ".cpp", ".xml", ".json" }.Contains(ext)) Launch("code", p); else if (new[] { ".txt", ".md", ".log", ".ini" }.Contains(ext)) Launch("notepad", p); else U.Open(p);
     }
 
     async Task ExtractHere(string zip)
@@ -387,6 +387,7 @@ class DesktopForm : Form
         switch (k)
         {
             case "files": T(k, arg, AddWin("Files", "folder", Views.Files(this, arg ?? Paths.Root), new Size(800, 520))); break;
+            case "code": T(k, arg, AddWin(arg == null ? "Code Editor" : Path.GetFileName(arg), "code", CodeEditor.View(this, arg), new Size(960, 600))); break;
             case "notepad": T(k, arg, AddWin(arg == null ? "Notepad" : Path.GetFileName(arg), "notepad", Views.Notepad(this, arg), new Size(680, 460))); break;
             case "calc": T(k, arg, AddWin("Calculator", "calc", Views.Calc(), new Size(330, 490))); break;
             case "paint": T(k, arg, AddWin("Paint", "paint", Views.PaintApp(this), new Size(860, 580))); break;
