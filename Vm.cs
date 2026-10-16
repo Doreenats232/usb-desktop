@@ -163,7 +163,7 @@ static class VmApp
     public static Control View(DesktopForm sh)
     {
         var p = new Panel { BackColor = Ui.Surface }; Ui.Own(p); var pg = new PagePanel(); p.Controls.Add(pg);
-        RoundButton start = null!, stop = null!; ComboBox boot = null!; Label s1 = null!, s2 = null!, s3 = null!;
+        RoundButton start = null!, stop = null!; ComboBox boot = null!; NumericUpDown ram = null!; Label s1 = null!, s2 = null!, s3 = null!;
         RoundButton B(Control parent, string t, Func<Task> a, bool primary = true) { RoundButton? btn = null; btn = pg.Btn(parent, t, async () => { try { await a(); } catch (Exception ex) { st.Text = ex.Message; } Refresh(); }, primary); return btn; }
 
         pg.H("Full OS (Linux)"); pg.P("Runs a real Linux computer inside a window. Everything is saved on the USB.", true);
@@ -200,7 +200,7 @@ static class VmApp
             using var pr = Process.Start(new ProcessStartInfo(img) { ArgumentList = { "create", "-f", "qcow2", Disk, gb.Value + "G" }, CreateNoWindow = true, UseShellExecute = false })!; await pr.WaitForExitAsync(); st.Text = "Disk created";
         });
         pg.P("Computer settings", false, true, 11, 14); var r4 = pg.Row(2);
-        pg.Inline(r4, "RAM (MB)"); var ram = pg.Num(r4, 512, 32768, Cfg.Int("vm_ram", 2048), 256);
+        pg.Inline(r4, "RAM (MB)"); ram = pg.Num(r4, 512, 32768, Cfg.Int("vm_ram", 2048), 256);
         pg.Inline(r4, "CPUs"); var cpu = pg.Num(r4, 1, 16, Cfg.Int("vm_cpu", 2), 1);
         var r5 = pg.Row(2); pg.Inline(r5, "Boot from");
         boot = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Font = Ui.F(10.5f), Width = Ui.D(230), BackColor = Ui.Surface2, ForeColor = Ui.Text, FlatStyle = FlatStyle.Flat, Margin = new Padding(0, Ui.D(6), 0, 0) };
