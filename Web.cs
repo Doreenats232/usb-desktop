@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using Microsoft.Web.WebView2.Core;
@@ -109,6 +110,40 @@ static class Web
     }
     public static async Task FlushAll() { if (Cfg.Get("keeplogins", "1") != "1") return; foreach (var w in alive.ToList()) if (w.TryGetTarget(out var cw)) await Persist(cw); }
 
+    // ----- Google account shown on the profile button (read from the Google page once you are signed in) -----
+    static string AvatarFile => Path.Combine(Paths.Data, "gavatar.png");
+    static Bitmap Circle(Image im, int s)
+    {
+        var b = new Bitmap(s, s); using var g = Graphics.FromImage(b); g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        using var p = new GraphicsPath(); p.AddEllipse(0, 0, s - 1, s - 1); g.SetClip(p); g.DrawImage(im, 0, 0, s, s); return b;
+    }
+    static Image ProfileImage(int s)
+    {
+        try { if (Cfg.Get("gemail", "") != "" && File.Exists(AvatarFile)) { using var im = Image.FromFile(AvatarFile); return Circle(im, s * 2); } } catch { }
+        using var def = Icons.App("user"); return Icons.Scaled(def, s * 2);
+    }
+    static DateTime lastDetect = DateTime.MinValue;
+    static async Task DetectGoogle(CoreWebView2 c, Action changed)
+    {
+        try
+        {
+            var host = new Uri(c.Source).Host; if (!host.EndsWith("google.com") || (DateTime.Now - lastDetect).TotalSeconds < 3) return; lastDetect = DateTime.Now;
+            var raw = await c.ExecuteScriptAsync("(function(){var a=document.querySelector('a[aria-label^=\"Google Account\"]');if(!a)return '';var i=a.querySelector('img');return JSON.stringify({l:a.getAttribute('aria-label'),i:i?i.src:''});})()");
+            var inner = System.Text.Json.JsonSerializer.Deserialize<string>(raw); if (string.IsNullOrEmpty(inner)) return;
+            using var doc = System.Text.Json.JsonDocument.Parse(inner); var label = doc.RootElement.GetProperty("l").GetString() ?? ""; var img = doc.RootElement.GetProperty("i").GetString() ?? "";
+            var m = System.Text.RegularExpressions.Regex.Match(label, @"Google Account:\s*(.*?)\s*\(([^)]+)\)"); if (!m.Success) return;
+            Cfg.Set("gname", m.Groups[1].Value.Trim()); Cfg.Set("gemail", m.Groups[2].Value.Trim());
+            if (img.StartsWith("http")) { try { using var hc = new HttpClient(); var url = System.Text.RegularExpressions.Regex.Replace(img, @"=s\d+(-c)?", "=s128-c"); File.WriteAllBytes(AvatarFile, await hc.GetByteArrayAsync(url)); } catch { } }
+            changed();
+        }
+        catch { }
+    }
+    static async Task GoogleSignOut(CoreWebView2? c)
+    {
+        try { if (c != null) foreach (var ck in await c.CookieManager.GetCookiesAsync(null)) if (ck.Domain.Contains("google") || ck.Domain.Contains("youtube") || ck.Domain.Contains("gstatic")) c.CookieManager.DeleteCookie(ck); } catch { }
+        Cfg.Set("gname", ""); Cfg.Set("gemail", ""); try { File.Delete(AvatarFile); } catch { }
+    }
+
     static string Engine(string q)
     {
         var e = Cfg.Get("engine", "google");
@@ -210,7 +245,7 @@ input:hover,input:focus{box-shadow:0 2px 12px rgba(32,33,36,.26);border-color:tr
 
         var back = new IconBtn("back"); var fwd = new IconBtn("fwd"); var rel = new IconBtn("reload"); var home = new IconBtn("home"); var star = new IconBtn("star"); var menuBtn = new IconBtn("menu");
         var (omni, addr) = Ui.Input("Search Google or type a URL", false, 36); omni.Fill = Color.FromArgb(241, 243, 244); omni.Edge = Color.FromArgb(241, 243, 244); addr.BackColor = omni.Fill; addr.ForeColor = Color.FromArgb(32, 33, 36);
-        var prof = new PictureBox { Image = U.Avatar(Ui.D(28)), SizeMode = PictureBoxSizeMode.Zoom, Cursor = Cursors.Hand, BackColor = Color.White };
+        var prof = new PictureBox { Image = ProfileImage(Ui.D(28)), SizeMode = PictureBoxSizeMode.Zoom, Cursor = Cursors.Hand, BackColor = Color.White };
         tool.Controls.AddRange(new Control[] { back, fwd, rel, home, omni, star, prof, menuBtn });
         tool.Resize += (_, _) =>
         {
@@ -268,7 +303,7 @@ input:hover,input:focus{box-shadow:0 2px 12px rgba(32,33,36,.26);border-color:tr
                 c.DocumentTitleChanged += (_, _) => { ti.Title = c.DocumentTitle; tabs.Invalidate(); };
                 c.SourceChanged += (_, _) => { ti.Url = c.Source ?? ""; if (Cur() == ti) { SetAddr(c.Source); RefreshStar(); } };
                 c.NavigationStarting += (_, _) => { ti.Loading = true; if (Cur() == ti) { prog.Indeterminate = true; rel.Glyph = "close"; rel.Invalidate(); } tabs.Invalidate(); };
-                c.NavigationCompleted += (_, _) => { ti.Loading = false; if (Cur() == ti) { prog.Indeterminate = false; prog.Value = 0; rel.Glyph = "reload"; rel.Invalidate(); } tabs.Invalidate(); };
+                c.NavigationCompleted += (_, _) => { ti.Loading = false; _ = DetectGoogle(c, () => { prof.Image = ProfileImage(Ui.D(28)); }); if (Cur() == ti) { prog.Indeterminate = false; prog.Value = 0; rel.Glyph = "reload"; rel.Invalidate(); } tabs.Invalidate(); };
                 c.FaviconChanged += async (_, _) => { try { using var s = await c.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png); if (s != null) { using var im = Image.FromStream(s); ti.Icon = new Bitmap(im); tabs.Invalidate(); } } catch { } };
                 c.NewWindowRequested += (_, e) => { e.Handled = true; AddTab(e.Uri); };
                 c.ProcessFailed += (_, _) => { try { c.Reload(); } catch { } };
@@ -308,10 +343,25 @@ input:hover,input:focus{box-shadow:0 2px 12px rgba(32,33,36,.26);border-color:tr
         m.Items.Add("Clear browsing data (signs you out everywhere)", null, async (_, _) => { try { var c = Cur()?.View.CoreWebView2; if (c != null) { await c.Profile.ClearBrowsingDataAsync(); sh.Toast("Browsing data cleared"); } } catch (Exception ex) { sh.Toast(ex.Message); } });
         m.Items.Add("Developer tools", null, (_, _) => Cur()?.View.CoreWebView2?.OpenDevToolsWindow());
         menuBtn.Click += (_, _) => m.Show(menuBtn, new Point(menuBtn.Width - m.Width, menuBtn.Height));
-        var pm = new ContextMenuStrip { Renderer = new ToolStripProfessionalRenderer(), ForeColor = Color.FromArgb(32, 33, 36), BackColor = Color.White, Font = Ui.F(10) };
-        pm.Items.Add(Cfg.Get("name", Environment.UserName)).Enabled = false;
-        pm.Items.Add("Sign in to any website once.").Enabled = false; pm.Items.Add("Your logins live on this USB,").Enabled = false; pm.Items.Add("so your accounts travel with you.").Enabled = false;
-        prof.Click += (_, _) => pm.Show(prof, new Point(0, prof.Height));
+        prof.Click += (_, _) =>
+        {
+            var pm = new ContextMenuStrip { Renderer = new ToolStripProfessionalRenderer(), ForeColor = Color.FromArgb(32, 33, 36), BackColor = Color.White, Font = Ui.F(10) };
+            var gn = Cfg.Get("gname", ""); var ge = Cfg.Get("gemail", "");
+            if (ge != "")
+            {
+                pm.Items.Add(gn != "" ? gn : ge).Enabled = false; if (gn != "") pm.Items.Add(ge).Enabled = false; pm.Items.Add(new ToolStripSeparator());
+                pm.Items.Add("Manage your Google Account", null, (_, _) => AddTab("https://myaccount.google.com/"));
+                pm.Items.Add("Add another Google account", null, (_, _) => AddTab("https://accounts.google.com/AddSession?continue=https%3A%2F%2Fwww.google.com%2F"));
+                pm.Items.Add("Sign out of Google", null, async (_, _) => { await GoogleSignOut(Cur()?.View.CoreWebView2); prof.Image = ProfileImage(Ui.D(28)); Cur()?.View.CoreWebView2?.Reload(); });
+            }
+            else
+            {
+                pm.Items.Add("Sign in with Google", null, (_, _) => AddTab("https://accounts.google.com/ServiceLogin?hl=en&continue=https%3A%2F%2Fwww.google.com%2F"));
+                pm.Items.Add(new ToolStripSeparator());
+                pm.Items.Add("Sign in once. It stays signed in on this USB.").Enabled = false;
+            }
+            pm.Show(prof, new Point(0, prof.Height));
+        };
 
         // keyboard shortcuts
         void Key(Keys k, bool ctrl)

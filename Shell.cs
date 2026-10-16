@@ -10,7 +10,7 @@ class Surface : Panel
     {
         var g = e.Graphics; if (Bg != null) g.DrawImage(Bg, 0, 0); else g.Clear(Ui.Bg);
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        foreach (var w in Controls.OfType<Win>().Where(x => x.Visible && !x.IsMax))
+        if (!Win.AnyDrag) foreach (var w in Controls.OfType<Win>().Where(x => x.Visible && !x.IsMax))
             for (int i = 8; i >= 1; i--)
             {
                 var r = Rectangle.Inflate(w.Bounds, i * Ui.D(2), i * Ui.D(2)); r.Offset(0, Ui.D(6));
@@ -60,6 +60,11 @@ class Win : Panel
     readonly Label tl = new(); readonly PictureBox ico = new();
     readonly RoundButton cl, mx, mn;
     bool max, drag, rs, snapped; Point dn, st, rdn; Size rsz; Rectangle rest, last;
+    public static bool AnyDrag; bool freezeContent;
+    static bool HasNative(Control c) { if (c.GetType().Name == "WebView2") return true; foreach (Control k in c.Controls) if (HasNative(k)) return true; return false; }
+    // While a window is being moved or resized, heavy native content (the browser) is hidden so nothing lags or leaves trails; it comes back on release.
+    void Freeze() { AnyDrag = true; if (!freezeContent && HasNative(Content)) { freezeContent = true; BackColor = Ui.Surface; Content.Visible = false; } }
+    void Thaw() { AnyDrag = false; if (freezeContent) { freezeContent = false; Content.Visible = true; BackColor = Ui.Line; } Parent?.Invalidate(); }
     public bool IsMax => max; public string Kind = ""; public string? Arg; public Control Content = null!;
     public Rectangle RestBounds => (max || snapped) ? rest : Bounds;
 
@@ -86,18 +91,18 @@ class Win : Panel
         cl.Click += (_, _) => Closed?.Invoke(this); mn.Click += (_, _) => Minned?.Invoke(this); mx.Click += (_, _) => Toggle();
         foreach (Control c in new Control[] { bar, tl, ico })
         {
-            c.MouseDown += (_, e) => { Raise(); if (max || e.Button != MouseButtons.Left) return; if (snapped) { Size = rest.Size; snapped = false; } drag = true; dn = Cursor.Position; st = Location; };
+            c.MouseDown += (_, e) => { Raise(); if (max || e.Button != MouseButtons.Left) return; if (snapped) { Size = rest.Size; snapped = false; } drag = true; dn = Cursor.Position; st = Location; Freeze(); };
             c.MouseMove += (_, _) => { if (drag) { var d = Cursor.Position; Location = new Point(st.X + d.X - dn.X, Math.Max(0, st.Y + d.Y - dn.Y)); } };
             c.MouseUp += (_, _) =>
             {
-                if (!drag) return; drag = false; if (Parent == null) return; var pt = Parent.PointToClient(Cursor.Position);
+                if (!drag) return; drag = false; Thaw(); if (Parent == null) return; var pt = Parent.PointToClient(Cursor.Position);
                 if (pt.Y <= 4) Toggle(); else if (pt.X <= 4) SnapTo(0); else if (pt.X >= Parent.Width - 5) SnapTo(1);
             };
             c.DoubleClick += (_, _) => Toggle();
         }
-        grip.MouseDown += (_, _) => { rs = true; rdn = Cursor.Position; rsz = Size; };
+        grip.MouseDown += (_, _) => { rs = true; rdn = Cursor.Position; rsz = Size; Freeze(); };
         grip.MouseMove += (_, _) => { if (rs) { var d = Cursor.Position; Size = new Size(Math.Max(Ui.D(340), rsz.Width + d.X - rdn.X), Math.Max(Ui.D(240), rsz.Height + d.Y - rdn.Y)); } };
-        grip.MouseUp += (_, _) => rs = false;
+        grip.MouseUp += (_, _) => { rs = false; Thaw(); };
         Hook(content); MouseDown += (_, _) => Raise();
     }
     void Hook(Control c) { c.MouseDown += (_, _) => Raise(); foreach (Control k in c.Controls) Hook(k); }
