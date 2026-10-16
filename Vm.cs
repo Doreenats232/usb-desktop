@@ -33,9 +33,7 @@ static class VmApp
     // Tiny local web server that hands Linux its first-boot settings (user, password, desktop) so nothing has to be typed inside the VM.
     static void StartSeed(string pw, bool desktop, string distro)
     {
-        string user = "user"; var ud = new StringBuilder("#cloud-config\nhostname: usb-linux\nusers:\n  - name: " + user + "\n    gecos: USB Desktop user\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: /bin/bash
-    groups: [" + (distro == "alpine" ? "wheel" : "sudo") + "]
-    lock_passwd: false\n");
+        string user = "user"; var ud = new StringBuilder("#cloud-config\nhostname: usb-linux\nusers:\n  - name: " + user + "\n    gecos: USB Desktop user\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: /bin/bash\n    groups: [" + (distro == "alpine" ? "wheel" : "sudo") + "]\n    lock_passwd: false\n");
         ud.Append("chpasswd:\n  expire: false\n  list: |\n    " + user + ":" + pw.Replace("\n", "") + "\nssh_pwauth: true\n");
         if (desktop)
         {
