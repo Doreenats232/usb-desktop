@@ -85,6 +85,7 @@ static class VmApp
         new() { Id = "ubuntu", Name = "Ubuntu 24.04", Note = "the most popular, desktop or terminal", Kind = "cloud", Url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img", NeedGb = 8, Desktop = true },
         new() { Id = "alpine", Name = "Alpine Linux", Note = "tiny and very fast, terminal only", Kind = "cloud", Dir = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/cloud/", Pattern = @"nocloud_alpine-\d+\.\d+\.\d+-x86_64-bios-cloudinit-r\d+\.qcow2", NeedGb = 3, Desktop = false },
         new() { Id = "kali", Name = "Kali Linux", Note = "security tools with a ready desktop, big download (about 25 GB of space)", Kind = "kali", Dir = "https://cdimage.kali.org/current/", Pattern = @"kali-linux-\d{4}\.\d+-qemu-amd64\.7z", NeedGb = 28, Desktop = true },
+        new() { Id = "android", Name = "Android (Android-x86 9)", Note = "Android on your PC for apps and games, you click through its installer once, slow without virtualization", Kind = "android", Url = "https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download", NeedGb = 10, Desktop = false },
     };
     static string pendingDistro = "debian";
 
@@ -97,6 +98,21 @@ static class VmApp
     static async Task GetDistro(DlCard card, Distro d, int gb, CancellationToken ct)
     {
         var url = d.Url != "" ? d.Url : await Latest(d.Dir, d.Pattern); var target = DiskFor(d.Id);
+        if (d.Kind == "android")
+        {
+            var iso = Path.Combine(Paths.Vm, "android-x86.iso");
+            if (!File.Exists(iso) || new FileInfo(iso).Length < 500_000_000)
+            {
+                var ip = iso + ".part";
+                await Net.Download(url, ip, (g, t, sp) => card.Stage($"Step 4/5 · Downloading Android  {Ui.Bytes(g)}" + (t > 0 ? " of " + Ui.Bytes(t) : "") + $"  ·  {Ui.Bytes((long)sp)}/s", t > 0 ? 28 + 55.0 * g / t : -1), ct);
+                if (new FileInfo(ip).Length < 500_000_000) { try { File.Delete(ip); } catch { } throw new Exception("The Android download didn't come through (wrong file). Try again later."); }
+                File.Move(ip, iso, true);
+            }
+            card.Stage("Step 4/5 · Preparing the Android disk…", 90);
+            var qi = Exe("qemu-img.exe") ?? throw new Exception("qemu-img is missing. Reinstall QEMU."); if (File.Exists(target)) File.Delete(target);
+            using var cp = Process.Start(new ProcessStartInfo(qi) { ArgumentList = { "create", "-f", "qcow2", target, gb + "G" }, CreateNoWindow = true, UseShellExecute = false })!; await cp.WaitForExitAsync();
+            return;
+        }
         if (d.Kind == "kali")
         {
             var arc = Path.Combine(Paths.Vm, "kali.7z"); 
@@ -149,7 +165,7 @@ static class VmApp
         else if (usbQemuDir != null) { var p = Path.Combine(usbQemuDir, n); if (File.Exists(p)) return p; }
         return null;
     }
-    static string? Iso() { try { return Directory.GetFiles(Paths.Vm, "*.iso").FirstOrDefault() ?? Directory.GetFiles(Paths.Root, "*.iso").FirstOrDefault(); } catch { return null; } }
+    static string? Iso() { try { var ai = Path.Combine(Paths.Vm, "android-x86.iso"); if (CurId == "android" && File.Exists(ai)) return ai; return Directory.GetFiles(Paths.Vm, "*.iso").FirstOrDefault() ?? Directory.GetFiles(Paths.Root, "*.iso").FirstOrDefault(); } catch { return null; } }
 
     static async Task<string> Latest(string dir, string pattern)
     {
@@ -212,7 +228,9 @@ static class VmApp
         {
             Cfg.Set("vm_ram", ((int)ram.Value).ToString()); Cfg.Set("vm_cpu", ((int)cpu.Value).ToString()); Cfg.Set("vm_boot", boot.SelectedIndex.ToString());
             var exe = Exe("qemu-system-x86_64.exe")!; var psi = new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe)!, UseShellExecute = false };
-            foreach (var a in new[] { "-m", ram.Value.ToString(), "-smp", cpu.Value.ToString(), "-accel", "whpx,kernel-irqchip=off", "-accel", "tcg", "-drive", $"file={Disk},format=qcow2,if=virtio", "-nic", "user,model=virtio-net-pci", "-device", "qemu-xhci", "-device", "usb-tablet", "-vga", "std", "-name", "USB Desktop Linux" }) psi.ArgumentList.Add(a);
+            var ifd = CurId == "android" ? "ide" : "virtio";
+            if (CurId == "android") foreach (var x in new[] { "-cpu", "max", "-device", "intel-hda", "-device", "hda-duplex" }) psi.ArgumentList.Add(x);
+            foreach (var a in new[] { "-m", ram.Value.ToString(), "-smp", cpu.Value.ToString(), "-accel", "whpx,kernel-irqchip=off", "-accel", "tcg", "-drive", $"file={Disk},format=qcow2,if={ifd}", "-nic", "user,model=virtio-net-pci", "-device", "qemu-xhci", "-device", "usb-tablet", "-vga", "std", "-name", "USB Desktop Linux" }) psi.ArgumentList.Add(a);
             if (boot.SelectedIndex == 1 && Iso() != null) { psi.ArgumentList.Add("-cdrom"); psi.ArgumentList.Add(Iso()!); psi.ArgumentList.Add("-boot"); psi.ArgumentList.Add("d"); }
             if (pendingPw != null) { StartSeed(pendingPw, pendingDesk, pendingDistro); pendingPw = null; psi.ArgumentList.Add("-smbios"); psi.ArgumentList.Add("type=1,serial=ds=nocloud-net;s=http://10.0.2.2:" + SeedPort + "/"); }
             psi.ArgumentList.Add("-monitor"); psi.ArgumentList.Add($"tcp:127.0.0.1:{MonPort},server,nowait");
@@ -252,18 +270,22 @@ static class VmApp
                     int size = Ask.Choose("How much space?", "This is just a file on your USB and it only grows as you use it.", "8 GB", "16 GB", "32 GB"); if (size < 0) { card.Fail("Cancelled"); return; } gb = new[] { 8, 16, 32 }[size];
                     pw = Ask.Password("Choose a Linux password", "You'll log in as  user  with this password.") ?? ""; if (pw == "") { card.Fail("Cancelled"); return; }
                 }
+                if (fresh && dist.Kind == "android")
+                {
+                    int size = Ask.Choose("How much space for Android?", "Games are big. This is one file on your USB and it only grows as you use it.", "16 GB", "32 GB", "64 GB"); if (size < 0) { card.Fail("Cancelled"); return; } gb = new[] { 16, 32, 64 }[size];
+                }
                 if (fresh) EnsureSpace(dist.NeedGb + (desk ? 3 : 0));
                 await EnsureQemu(card, 3, cts.Token);
                 if (fresh)
                 {
                     await GetDistro(card, dist, gb, cts.Token);
                     if (dist.Kind == "cloud") { pendingPw = pw; pendingDesk = desk; }
-                    if (dist.Kind == "kali" && ram.Value < 4096) ram.Value = 4096;
+                    if ((dist.Kind == "kali" || dist.Kind == "android") && ram.Value < 4096) ram.Value = 4096;
                 }
-                card.Stage("Step 5/5 · Starting " + dist.Name + "…", 96); Cfg.Set("vm_boot", "0"); boot.SelectedIndex = 0; Refresh(); await Task.Delay(500);
+                card.Stage("Step 5/5 · Starting " + dist.Name + "…", 96); int bi = dist.Kind == "android" && fresh ? 1 : 0; Cfg.Set("vm_boot", bi.ToString()); boot.SelectedIndex = bi; Refresh(); await Task.Delay(500);
                 if (!start.Enabled) throw new Exception("Everything is ready but Linux couldn't start. Press Start Full OS below.");
                 start.PerformClick();
-                card.Done(fresh ? (dist.Kind == "kali" ? "Kali is starting. Log in with  kali  /  kali." : dist.Name + " is starting. The first start takes several minutes while it sets itself up. Log in as  user.") : dist.Name + " is starting.");
+                card.Done(fresh && dist.Kind == "android" ? "Android installer is starting. Pick Installation, make one bootable partition (no GPT), format ext4, install GRUB, then Reboot. After that close the window, set Boot from to Disk and press Start." : fresh ? (dist.Kind == "kali" ? "Kali is starting. Log in with  kali  /  kali." : dist.Name + " is starting. The first start takes several minutes while it sets itself up. Log in as  user.") : dist.Name + " is starting.");
             }
             catch (OperationCanceledException) { card.Fail("Cancelled"); }
             catch (Exception ex) { card.Fail(ex.Message); }
