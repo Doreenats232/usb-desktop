@@ -11,6 +11,7 @@ static class Assistant
     static readonly Regex Act = new(@"\[\[(\w+):([^\]]*)\]\]", RegexOptions.Compiled);
     static readonly string[] Apps = { "files", "code", "notepad", "calc", "paint", "term", "web", "store", "tm", "vault", "vm", "settings" };
     static System.Speech.Synthesis.SpeechSynthesizer? synth;
+    const string DefUrl = "https://relayapi-c5ah.onrender.com";
 
     const string Sys =
         "You are the built-in assistant of USB Desktop, a portable Windows desktop that runs from a USB drive. Reply short and friendly. " +
@@ -45,9 +46,9 @@ static class Assistant
 
         // settings panel
         var set = new Panel { Dock = DockStyle.Top, Height = Ui.D(196), BackColor = Ui.Surface2, Visible = false, Padding = new Padding(Ui.D(14), Ui.D(4), Ui.D(14), Ui.D(8)) };
-        var (uBox, uTb) = Ui.Input("RelayAPI address, e.g. https://relayapi-xxxx.onrender.com", false, 38); uTb.Text = Cfg.Get("ai_url");
+        var (uBox, uTb) = Ui.Input("RelayAPI address, e.g. https://relayapi-xxxx.onrender.com", false, 38); uTb.Text = Cfg.Get("ai_url", DefUrl);
         var (kBox, kTb) = Ui.Input("RelayAPI key", true, 38); kTb.Text = Cfg.Get("ai_key");
-        var (mBox, mTb) = Ui.Input("Provider name in RelayAPI (the model), e.g. ChatGPT", false, 38); mTb.Text = Cfg.Get("ai_model");
+        var (mBox, mTb) = Ui.Input("Provider name (optional: empty uses your first RelayAPI provider)", false, 38); mTb.Text = Cfg.Get("ai_model");
         var bSave = new RoundButton { Text = "Save", Pill = true, BackColor = Theme.Accent, ForeColor = Color.White, Height = Ui.D(34), Width = Ui.D(120) };
         foreach (var c in new Control[] { bSave, mBox, kBox, uBox }) { if (c is RoundPanel) { c.Dock = DockStyle.Top; c.Margin = new Padding(0); } }
         mBox.Height = kBox.Height = uBox.Height = Ui.D(38);
@@ -72,7 +73,7 @@ static class Assistant
             chat.SelectionColor = Ui.Text; chat.SelectionFont = Ui.F(10.5f); chat.AppendText(text + "\n\n"); chat.ScrollToCaret();
         }
         foreach (var h in hist.TakeLast(30)) Add(h["role"] == "user" ? "You" : "Assistant", h["content"], h["role"] == "user" ? Theme.Accent : Ui.Sub);
-        if (hist.Count == 0) Add("Assistant", "Hi! I can chat, open apps, save notes and read answers out loud. Press Settings once and add your RelayAPI address, key and provider name.", Ui.Sub);
+        if (hist.Count == 0) Add("Assistant", "Hi! I can chat, open apps, save notes and read answers out loud. Press Settings once and add your RelayAPI key.", Ui.Sub);
 
         string Run(string reply)
         {
@@ -98,11 +99,12 @@ static class Assistant
         async void Send(string text)
         {
             text = text.Trim(); if (busy || text == "") return;
-            string url = Cfg.Get("ai_url"), key = Cfg.Get("ai_key"), model = Cfg.Get("ai_model");
-            if (url == "" || key == "" || model == "") { Add("Assistant", "Add your RelayAPI address, key and provider name in Settings first.", Ui.Sub); set.Visible = true; return; }
+            string url = Cfg.Get("ai_url", DefUrl), key = Cfg.Get("ai_key"), model = Cfg.Get("ai_model");
+            if (url == "" || key == "") { Add("Assistant", "Add your RelayAPI key in Settings first.", Ui.Sub); set.Visible = true; return; }
             busy = true; tb.Text = ""; Add("You", text, Theme.Accent); hist.Add(new() { ["role"] = "user", ["content"] = text }); status.Text = "Thinking…";
             try
             {
+                if (model == "") { model = await Net.FirstModel(url, key); if (model == "") throw new Exception("No provider found in RelayAPI. Add one in its dashboard."); }
                 var msgs = new List<object> { new { role = "system", content = Sys } };
                 foreach (var h in hist.TakeLast(10)) msgs.Add(new { role = h["role"], content = h["content"] });
                 var reply = await Net.Chat(url, key, model, msgs.ToArray(), CancellationToken.None);

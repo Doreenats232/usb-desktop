@@ -11,6 +11,16 @@ static class Net
     public static HttpClient Http => http;
     static Net() { http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0) UsbDesktop/2"); }
 
+    public static async Task<string> FirstModel(string baseUrl, string key)
+    {
+        var url = baseUrl.Trim().TrimEnd('/'); if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) url = "https://" + url;
+        using var req = new HttpRequestMessage(HttpMethod.Get, url + "/v1/models"); req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var resp = await http.SendAsync(req, cts.Token); var body = await resp.Content.ReadAsStringAsync(cts.Token);
+        if (!resp.IsSuccessStatusCode) throw new Exception(resp.StatusCode == HttpStatusCode.Unauthorized ? "Invalid RelayAPI key" : "RelayAPI said " + (int)resp.StatusCode);
+        var d = JsonDocument.Parse(body).RootElement.GetProperty("data"); return d.GetArrayLength() > 0 ? d[0].GetProperty("id").GetString() ?? "" : "";
+    }
+
     // OpenAI-style chat call (used for RelayAPI)
     public static async Task<string> Chat(string baseUrl, string key, string model, object[] messages, CancellationToken ct)
     {
