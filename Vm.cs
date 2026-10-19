@@ -33,7 +33,7 @@ static class VmApp
     // Tiny local web server that hands Linux its first-boot settings (user, password, desktop) so nothing has to be typed inside the VM.
     static void StartSeed(string pw, bool desktop, string distro)
     {
-        string user = "user"; var ud = new StringBuilder("#cloud-config\nhostname: usb-linux\nusers:\n  - name: " + user + "\n    gecos: USB Desktop user\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: " + (distro == "alpine" ? "/bin/ash" : "/bin/bash") + "\n    groups: [" + (distro == "alpine" ? "wheel" : "sudo") + "]\n    lock_passwd: false\n");
+        string user = "user"; var ud = new StringBuilder("#cloud-config\nhostname: usb-linux\nusers:\n  - name: " + user + "\n    gecos: USB Desktop user\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: " + (distro == "alpine" ? "/bin/ash" : "/bin/bash") + "\n    groups: [" + (distro is "alpine" or "fedora" or "arch" ? "wheel" : "sudo") + "]\n    lock_passwd: false\n");
         ud.Append("chpasswd:\n  expire: false\n  list: |\n    " + user + ":" + pw.Replace("\n", "") + "\nssh_pwauth: true\n");
         if (desktop)
         {
@@ -86,6 +86,8 @@ static class VmApp
         new() { Id = "ubuntu", Name = "Ubuntu 24.04", Note = "the most popular, desktop or terminal", Kind = "cloud", Url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img", NeedGb = 8, Desktop = true },
         new() { Id = "alpine", Name = "Alpine Linux", Note = "tiny and very fast, terminal only", Kind = "cloud", Dir = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/cloud/", Pattern = @"nocloud_alpine-\d+\.\d+\.\d+-x86_64-bios-cloudinit-r\d+\.qcow2", NeedGb = 3, Desktop = false },
         new() { Id = "kali", Name = "Kali Linux", Note = "security tools with a ready desktop, big download (about 25 GB of space)", Kind = "kali", Dir = "https://cdimage.kali.org/current/", Pattern = @"kali-linux-\d{4}\.\d+-qemu-amd64\.7z", NeedGb = 28, Desktop = true },
+        new() { Id = "fedora", Name = "Fedora", Note = "modern and up to date, terminal only", Kind = "cloud", Url = "", Dir = "", Pattern = "", NeedGb = 6, Desktop = false },
+        new() { Id = "arch", Name = "Arch Linux", Note = "rolling release for advanced users, terminal only", Kind = "cloud", Url = "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2", NeedGb = 6, Desktop = false },
         new() { Id = "android", Name = "Android (Android-x86 9)", Note = "Android on your PC for apps and games, you click through its installer once, slow without virtualization", Kind = "android", Url = "https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download", NeedGb = 10, Desktop = false },
     };
     static string pendingDistro = "debian";
@@ -96,9 +98,17 @@ static class VmApp
         catch (IOException) { }
     }
 
+    static async Task<string> FedoraUrl()
+    {
+        var rels = await Net.Text("https://dl.fedoraproject.org/pub/fedora/linux/releases/");
+        var n = Regex.Matches(rels, "href=\"(\\d+)/\"").Select(m => int.Parse(m.Groups[1].Value)).DefaultIfEmpty(0).Max();
+        if (n == 0) throw new Exception("Couldn't find the Fedora download. Check your internet.");
+        return await Latest($"https://dl.fedoraproject.org/pub/fedora/linux/releases/{n}/Cloud/x86_64/images/", @"Fedora-Cloud-Base-Generic-[\d.-]+\.x86_64\.qcow2");
+    }
+
     static async Task GetDistro(DlCard card, Distro d, int gb, CancellationToken ct)
     {
-        var url = d.Url != "" ? d.Url : await Latest(d.Dir, d.Pattern); var target = DiskFor(d.Id);
+        var url = d.Id == "fedora" ? await FedoraUrl() : d.Url != "" ? d.Url : await Latest(d.Dir, d.Pattern); var target = DiskFor(d.Id);
         if (d.Kind == "android")
         {
             var iso = Path.Combine(Paths.Vm, "android-x86.iso");
@@ -222,6 +232,7 @@ static class VmApp
         var r5 = pg.Row(2); pg.Inline(r5, "Boot from");
         boot = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Font = Ui.F(10.5f), Width = Ui.D(230), BackColor = Ui.Surface2, ForeColor = Ui.Text, FlatStyle = FlatStyle.Flat, Margin = new Padding(0, Ui.D(6), 0, 0) };
         boot.Items.AddRange(new object[] { "Disk (installed Linux)", "Installer ISO (first time)" }); boot.SelectedIndex = Math.Clamp(Cfg.Int("vm_boot", 1), 0, 1); r5.Controls.Add(boot);
+        var r5b = pg.Row(4); share = new CheckBox { Text = "Share the USB 'Share' folder with the VM (small files only, shows up as a USB drive)", AutoSize = true, ForeColor = Ui.Text, BackColor = Color.Transparent, Font = Ui.F(10), Checked = Cfg.Get("vm_share", "0") == "1" }; r5b.Controls.Add(share);
         pg.P("First time: boot from the installer ISO, install Linux onto the disk, then switch to Disk.", true, false, 10, 8);
         pg.P("Alpine: log in as root, run  setup-alpine.  Tip: turn on 'Windows Hypervisor Platform' in Windows Features for much faster speed.", true, false, 10);
         var r6 = pg.Row(14);
@@ -230,7 +241,9 @@ static class VmApp
             Cfg.Set("vm_ram", ((int)ram.Value).ToString()); Cfg.Set("vm_cpu", ((int)cpu.Value).ToString()); Cfg.Set("vm_boot", boot.SelectedIndex.ToString());
             var exe = Exe("qemu-system-x86_64.exe")!; var psi = new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe)!, UseShellExecute = false };
             var ifd = CurId == "android" ? "ide" : "virtio";
-            if (CurId == "android") foreach (var x in new[] { "-cpu", "max", "-device", "intel-hda", "-device", "hda-duplex" }) psi.ArgumentList.Add(x);
+            if (CurId == "android") { psi.ArgumentList.Add("-cpu"); psi.ArgumentList.Add("max"); }
+            if (Cfg.Get("vm_sound", "1") == "1") foreach (var x in new[] { "-device", "intel-hda", "-device", "hda-duplex" }) psi.ArgumentList.Add(x);
+            if (share.Checked) { Cfg.Set("vm_share", "1"); var sd = Path.Combine(Paths.Root, "Share"); Directory.CreateDirectory(sd); foreach (var x in new[] { "-drive", "file=fat:rw:" + sd + ",format=raw,if=none,id=usbshare", "-device", "usb-storage,drive=usbshare" }) psi.ArgumentList.Add(x); } else Cfg.Set("vm_share", "0");
             foreach (var a in new[] { "-m", ram.Value.ToString(), "-smp", cpu.Value.ToString(), "-accel", "whpx,kernel-irqchip=off", "-accel", "tcg", "-drive", $"file={Disk},format=qcow2,if={ifd}", "-nic", "user,model=virtio-net-pci", "-device", "qemu-xhci", "-device", "usb-tablet", "-vga", "std", "-name", "USB Desktop Linux" }) psi.ArgumentList.Add(a);
             if (boot.SelectedIndex == 1 && Iso() != null) { psi.ArgumentList.Add("-cdrom"); psi.ArgumentList.Add(Iso()!); psi.ArgumentList.Add("-boot"); psi.ArgumentList.Add("d"); }
             if (pendingPw != null) { StartSeed(pendingPw, pendingDesk, pendingDistro); pendingPw = null; psi.ArgumentList.Add("-smbios"); psi.ArgumentList.Add("type=1,serial=ds=nocloud-net;s=http://10.0.2.2:" + SeedPort + "/"); }
@@ -295,5 +308,5 @@ static class VmApp
         p.Tag = new StateApi { Get = () => Frozen ? "frozen" : null, Set = d => { if (d == "frozen") Task.Delay(1800).ContinueWith(_ => { if (!p.IsDisposed) p.BeginInvoke(new Action(() => { if (start.Enabled) start.PerformClick(); })); }); } };
         return p;
     }
-    static Label st = null!;
+    static Label st = null!; static CheckBox share = null!;
 }

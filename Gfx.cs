@@ -209,6 +209,18 @@ static class Icons
                     using var gl = new Pen(C(255, 255, 255, 36), 2); for (int i = 1; i < 4; i++) gg.DrawLine(gl, 60, 60 + i * 32, 196, 60 + i * 32);
                     using var pn = new Pen(C(110, 255, 210), 9) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round }; gg.DrawLines(pn, new[] { new PointF(64, 160), new PointF(96, 128), new PointF(120, 146), new PointF(150, 92), new PointF(192, 112) });
                 }));
+            case "getapps":
+                return Make(g => Tile(g, C(60, 190, 150), C(20, 110, 130), gg =>
+                {
+                    using var tray = RR(52, 168, 152, 30, 12); using (var b = new SolidBrush(C(255, 255, 255))) gg.FillPath(b, tray);
+                    using var ar = new GraphicsPath(); ar.AddPolygon(new[] { new PointF(112, 52), new PointF(144, 52), new PointF(144, 104), new PointF(172, 104), new PointF(128, 154), new PointF(84, 104), new PointF(112, 104) }); using (var b = new SolidBrush(C(255, 255, 255))) gg.FillPath(b, ar);
+                }));
+            case "games":
+                return Make(g => Tile(g, C(255, 140, 90), C(210, 50, 100), gg =>
+                {
+                    using var body = RR(40, 80, 176, 96, 44); using (var b = new SolidBrush(C(255, 255, 255))) gg.FillPath(b, body);
+                    using (var b = new SolidBrush(C(210, 50, 100))) { gg.FillRectangle(b, 78, 112, 36, 10); gg.FillRectangle(b, 91, 99, 10, 36); gg.FillEllipse(b, 148, 104, 18, 18); gg.FillEllipse(b, 168, 124, 18, 18); }
+                }));
             case "ai":
                 return Make(g => Tile(g, C(168, 110, 255), C(70, 60, 220), gg =>
                 {

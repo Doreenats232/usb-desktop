@@ -95,6 +95,25 @@ static class VaultBackup
         say($"Restored {names.Count} file(s)");
     }
 
+    public static async Task BackupSettings(Action<string> say, CancellationToken ct)
+    {
+        var f = Path.Combine(Paths.Data, "settings.ini"); if (!File.Exists(f)) throw new Exception("No settings saved yet.");
+        var lines = File.ReadAllLines(f).Where(l => !l.Split('=')[0].EndsWith("_key")).ToArray();
+        var tmp = Path.Combine(Path.GetTempPath(), "UsbDesktop-settings.txt"); File.WriteAllLines(tmp, lines);
+        const string rn = "usbdesktop-settings.ini"; var have = await Names(ct); say("Saving settings…");
+        if (have.Contains(rn)) { try { using var d = await Net.Http.SendAsync(Rq(HttpMethod.Post, "/v1/fs/delete", JsonSerializer.Serialize(new { path = rn })), ct); } catch { } }
+        await Upload(tmp, rn, ct); try { File.Delete(tmp); } catch { } say("Settings saved to your TeraBox vault");
+    }
+
+    public static async Task RestoreSettings(Action<string> say, CancellationToken ct)
+    {
+        const string rn = "usbdesktop-settings.ini"; if (!(await Names(ct)).Contains(rn)) throw new Exception("No settings backup found in your TeraBox project.");
+        say("Loading settings…"); var s = await Json(Rq(HttpMethod.Post, "/v1/fs/sign", JsonSerializer.Serialize(new { path = rn, ttl = 900 })), ct);
+        var tmp = Path.Combine(Path.GetTempPath(), "UsbDesktop-settings-in.txt"); await Net.Download(s.GetProperty("url").GetString()!, tmp, (_, _, _) => { }, ct);
+        foreach (var l in File.ReadAllLines(tmp)) { var i = l.IndexOf('='); if (i > 0 && !l[..i].EndsWith("_key")) Cfg.Set(l[..i], l[(i + 1)..]); }
+        try { File.Delete(tmp); } catch { } say("Settings loaded. Restart USB Desktop to apply them.");
+    }
+
     public static void Settings()
     {
         using var f = new Form { Text = "Vault backup settings", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen, ClientSize = new Size(480, 200), MaximizeBox = false, MinimizeBox = false, TopMost = true };

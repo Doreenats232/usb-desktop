@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 namespace UsbDesktop;
@@ -19,6 +20,8 @@ static class Assistant
         "[[open:APP]] opens an app (APP is one of files, code, notepad, calc, paint, term, web, store, tm, vault, vm, settings); " +
         "[[web:https://example.com]] opens a page in the browser; " +
         "[[note:Title|text of the note]] saves a text file on the Desktop. " +
+        "[[read:Desktop/file.txt]] reads a text file from the USB (you will get its text back); " +
+        "[[run:command]] runs a Windows command (cmd) after the user approves, and you get its output back. " +
         "Only use a tag when the user asks for that action. Never mention these tags in your words.";
 
     static List<Dictionary<string, string>> Load()
@@ -96,6 +99,41 @@ static class Assistant
             }).Trim();
         }
 
+        async Task<(string shown, string feedback)> Handle(string reply)
+        {
+            var fb = new List<string>();
+            foreach (Match m in Act.Matches(reply))
+            {
+                var k = m.Groups[1].Value.ToLowerInvariant(); var a = m.Groups[2].Value.Trim();
+                try
+                {
+                    if (k == "read")
+                    {
+                        var full = Path.GetFullPath(Path.Combine(Paths.Root, a.Replace('/', Path.DirectorySeparatorChar)));
+                        var rel = Path.GetRelativePath(Paths.Root, full);
+                        if (rel.StartsWith("..") || rel.Split(Path.DirectorySeparatorChar)[0].ToLowerInvariant() is "data" or "vm") { fb.Add("Reading " + a + " was not allowed."); continue; }
+                        if (MessageBox.Show("The assistant wants to read this file and see its text:\n\n" + rel + "\n\nAllow?", "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { fb.Add("The user did not allow reading " + a + "."); continue; }
+                        if (!File.Exists(full)) { fb.Add("File not found: " + a); continue; }
+                        var t = File.ReadAllText(full); if (t.Length > 6000) t = t[..6000] + "\n[cut off]"; fb.Add("Contents of " + a + ":\n" + t);
+                    }
+                    else if (k == "run")
+                    {
+                        if (MessageBox.Show("The assistant wants to run this command on this PC:\n\n" + a + "\n\nOnly allow it if you understand it. Run it?", "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) { fb.Add("The user did not allow running that command."); continue; }
+                        var o = await Task.Run(() =>
+                        {
+                            using var pr = Process.Start(new ProcessStartInfo("cmd.exe", "/c " + a) { RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, UseShellExecute = false, WorkingDirectory = Paths.Root })!;
+                            var so = pr.StandardOutput.ReadToEndAsync(); var se = pr.StandardError.ReadToEndAsync();
+                            if (!pr.WaitForExit(20000)) { try { pr.Kill(true); } catch { } return "[stopped after 20 seconds]"; }
+                            var r = so.Result + se.Result; return r.Length > 4000 ? r[..4000] + "\n[cut off]" : r;
+                        });
+                        fb.Add("Output of " + a + ":\n" + (o.Trim() == "" ? "(no output)" : o));
+                    }
+                }
+                catch (Exception ex) { fb.Add("That action failed: " + ex.Message); }
+            }
+            return (Run(Act.Replace(reply, me => me.Groups[1].Value.ToLowerInvariant() is "read" or "run" ? "" : me.Value)), string.Join("\n\n", fb));
+        }
+
         async void Send(string text)
         {
             text = text.Trim(); if (busy || text == "") return;
@@ -107,8 +145,16 @@ static class Assistant
                 if (model == "") { model = await Net.FirstModel(url, key); if (model == "") throw new Exception("No provider found in RelayAPI. Add one in its dashboard."); }
                 var msgs = new List<object> { new { role = "system", content = Sys } };
                 foreach (var h in hist.TakeLast(10)) msgs.Add(new { role = h["role"], content = h["content"] });
-                var reply = await Net.Chat(url, key, model, msgs.ToArray(), CancellationToken.None);
-                var clean = Run(reply); if (clean == "") clean = "Done.";
+                string clean = "";
+                for (int round = 0; round < 3; round++)
+                {
+                    var reply = await Net.Chat(url, key, model, msgs.ToArray(), CancellationToken.None);
+                    var (shown, fbk) = await Handle(reply);
+                    if (shown != "") clean = clean == "" ? shown : clean + "\n" + shown;
+                    if (fbk == "") break;
+                    status.Text = "Thinking…"; msgs.Add(new { role = "assistant", content = reply }); msgs.Add(new { role = "user", content = fbk });
+                }
+                if (clean == "") clean = "Done.";
                 hist.Add(new() { ["role"] = "assistant", ["content"] = clean }); Save(hist); Add("Assistant", clean, Ui.Sub);
                 if (Cfg.Get("ai_speak", "0") == "1") try { synth ??= new System.Speech.Synthesis.SpeechSynthesizer(); synth.SpeakAsyncCancelAll(); synth.SpeakAsync(clean); } catch { }
             }

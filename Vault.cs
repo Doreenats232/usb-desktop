@@ -118,7 +118,9 @@ static class VaultApp
             }
             B("Backup", () => Run("Backup", say => VaultBackup.Backup(say, CancellationToken.None), false));
             B("Restore", () => { if (MessageBox.Show("Restore replaces this vault with the TeraBox backup, including its password. Continue?", "Vault", MessageBoxButtons.YesNo) == DialogResult.Yes) Run("Restore", say => VaultBackup.Restore(say, CancellationToken.None), true); });
-            B("Backup settings", () => VaultBackup.Settings());
+            B("Save settings", () => Run("Save settings", say => VaultBackup.BackupSettings(say, CancellationToken.None), false));
+            B("Load settings", () => Run("Load settings", say => VaultBackup.RestoreSettings(say, CancellationToken.None), false));
+            B("Connection", () => VaultBackup.Settings());
             B("Lock", () => { Clear(); Build(); });
             p.Controls.Add(lv); p.Controls.Add(top); Fill();
         }

@@ -150,7 +150,7 @@ class DesktopForm : Form
     static readonly (string N, string K)[] Catalog =
     {
         ("Files", "files"), ("Full OS", "vm"), ("Notepad", "notepad"), ("Code Editor", "code"), ("Calculator", "calc"), ("Paint", "paint"), ("Terminal", "term"), ("Settings", "settings"),
-        ("Browser", "web"), ("Screenshot", "shot"), ("Recycle Bin", "bin"), ("MLD Store", "store"), ("Task Manager", "tm"), ("Vault", "vault"), ("AI Assistant", "ai"),
+        ("Browser", "web"), ("Screenshot", "shot"), ("Recycle Bin", "bin"), ("MLD Store", "store"), ("Task Manager", "tm"), ("Vault", "vault"), ("AI Assistant", "ai"), ("Get Apps", "getapps"), ("Games", "games"),
     };
     public static string IconKey(string k) => k switch { "files" => "folder", "web" => "browser", _ => k };
     static readonly string[] OnDesk = { "files", "web", "store", "ai", "vm", "vault", "bin", "settings", "notepad", "calc", "paint", "term" };
@@ -190,7 +190,7 @@ class DesktopForm : Form
         Shown += async (_, _) =>
         {
             var sp = new Splash(ClientSize); Controls.Add(sp); sp.BringToFront(); Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " ");
-            await Task.Delay(400); RestoreSession(); if (Cfg.Get("companion", "1") == "1") { try { Companion.Greet(); } catch { } }
+            await Task.Delay(400); _ = Changelog.Show(); RestoreSession(); if (Cfg.Get("companion", "1") == "1") { try { Companion.Greet(); } catch { } }
             try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { Toast("Update 1.0." + u.latest + " is available"); await Updater.Run(u.latest, u.url, true); } } catch { }
         };
     }
@@ -389,6 +389,8 @@ class DesktopForm : Form
             case "files": T(k, arg, AddWin("Files", "folder", Views.Files(this, arg ?? Paths.Root), new Size(800, 520))); break;
             case "code": T(k, arg, AddWin(arg == null ? "Code Editor" : Path.GetFileName(arg), "code", CodeEditor.View(this, arg), new Size(960, 600))); break;
             case "notepad": T(k, arg, AddWin(arg == null ? "Notepad" : Path.GetFileName(arg), "notepad", Views.Notepad(this, arg), new Size(680, 460))); break;
+            case "getapps": T(k, arg, AddWin("Get Apps", "getapps", GetApps.View(this), new Size(700, 520))); break;
+            case "games": T(k, arg, AddWin("Games", "games", Games.View(this), new Size(680, 520))); break;
             case "ai": T(k, arg, AddWin("AI Assistant", "ai", Assistant.View(this), new Size(760, 580))); break;
             case "calc": T(k, arg, AddWin("Calculator", "calc", Views.Calc(), new Size(330, 490))); break;
             case "paint": T(k, arg, AddWin("Paint", "paint", Views.PaintApp(this), new Size(860, 580))); break;
@@ -431,7 +433,7 @@ class DesktopForm : Form
         mName.Bounds = new Rectangle(Ui.D(76), Ui.D(536), Ui.D(250), Ui.D(44)); mName.ForeColor = Ui.Text; mName.Font = Ui.F(11); mName.TextAlign = ContentAlignment.MiddleLeft; mName.BackColor = Color.Transparent;
         var pw = new RoundButton { Glyph = "power", GlyphScale = 0.42f, Bounds = new Rectangle(Ui.D(374), Ui.D(536), Ui.D(50), Ui.D(44)), Pill = true };
         var pm = new ContextMenuStrip();
-        pm.Items.Add("Lock", null, (_, _) => { HideMenu(); Lock(); }); pm.Items.Add("Sleep (resume on any PC)", null, (_, _) => SleepNow()); pm.Items.Add("Safe eject USB", null, (_, _) => EjectNow()); pm.Items.Add("Panic lock (Ctrl+Alt+L)", null, (_, _) => PanicNow()); pm.Items.Add("Shut down", null, (_, _) => Application.Exit());
+        pm.Items.Add("Lock", null, (_, _) => { HideMenu(); Lock(); }); pm.Items.Add("Sleep (resume on any PC)", null, (_, _) => SleepNow()); pm.Items.Add("Safe eject USB", null, (_, _) => EjectNow()); pm.Items.Add("Panic lock (Ctrl+Alt+L)", null, (_, _) => PanicNow()); pm.Items.Add("Wipe my traces", null, (_, _) => { HideMenu(); int w = Traces.Wipe(); Toast("Traces wiped" + (w > 0 ? " (" + w + " recent shortcuts removed)" : "")); }); pm.Items.Add("Shut down", null, (_, _) => Application.Exit());
         pw.Click += (_, _) => pm.Show(pw, new Point(0, 0), ToolStripDropDownDirection.AboveLeft);
         menu.Controls.AddRange(new Control[] { sb, pl, grid, mAv, mName, pw }); pwBtn = pw; Ui.Dark(grid); Controls.Add(menu);
     }
