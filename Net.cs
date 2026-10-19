@@ -8,6 +8,7 @@ namespace UsbDesktop;
 static class Net
 {
     static readonly HttpClient http = new(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(15), AllowAutoRedirect = true }) { Timeout = Timeout.InfiniteTimeSpan };
+    public static HttpClient Http => http;
     static Net() { http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0) UsbDesktop/2"); }
 
     // OpenAI-style chat call (used for RelayAPI)

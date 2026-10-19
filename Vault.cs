@@ -107,6 +107,18 @@ static class VaultApp
                 foreach (ListViewItem it in lv.SelectedItems) { try { File.Delete(Path.Combine(Dir, (string)it.Tag! + ".enc")); } catch { } idx.Remove(it.Text); }
                 SaveIndex(); Fill();
             });
+            bool working = false;
+            async void Run(string what, Func<Action<string>, Task> job, bool reload)
+            {
+                if (working) return; if (!VaultBackup.Ready) { VaultBackup.Settings(); if (!VaultBackup.Ready) return; }
+                working = true;
+                try { await job(m => { if (!p.IsDisposed) sh.Toast(m); }); if (reload) { Clear(); Build(); sh.Toast("Restored. Unlock with the backup's vault password."); } }
+                catch (Exception ex) { sh.Toast(what + " failed: " + ex.Message); }
+                finally { working = false; }
+            }
+            B("Backup", () => Run("Backup", say => VaultBackup.Backup(say, CancellationToken.None), false));
+            B("Restore", () => { if (MessageBox.Show("Restore replaces this vault with the TeraBox backup, including its password. Continue?", "Vault", MessageBoxButtons.YesNo) == DialogResult.Yes) Run("Restore", say => VaultBackup.Restore(say, CancellationToken.None), true); });
+            B("Backup settings", () => VaultBackup.Settings());
             B("Lock", () => { Clear(); Build(); });
             p.Controls.Add(lv); p.Controls.Add(top); Fill();
         }
