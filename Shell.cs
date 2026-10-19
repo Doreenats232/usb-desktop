@@ -150,10 +150,10 @@ class DesktopForm : Form
     static readonly (string N, string K)[] Catalog =
     {
         ("Files", "files"), ("Full OS", "vm"), ("Notepad", "notepad"), ("Code Editor", "code"), ("Calculator", "calc"), ("Paint", "paint"), ("Terminal", "term"), ("Settings", "settings"),
-        ("Browser", "web"), ("Screenshot", "shot"), ("Recycle Bin", "bin"), ("MLD Store", "store"), ("Task Manager", "tm"), ("Vault", "vault"),
+        ("Browser", "web"), ("Screenshot", "shot"), ("Recycle Bin", "bin"), ("MLD Store", "store"), ("Task Manager", "tm"), ("Vault", "vault"), ("AI Assistant", "ai"),
     };
     public static string IconKey(string k) => k switch { "files" => "folder", "web" => "browser", _ => k };
-    static readonly string[] OnDesk = { "files", "web", "store", "vm", "vault", "bin", "settings", "notepad", "calc", "paint", "term" };
+    static readonly string[] OnDesk = { "files", "web", "store", "ai", "vm", "vault", "bin", "settings", "notepad", "calc", "paint", "term" };
 
     public DesktopForm()
     {
@@ -389,6 +389,7 @@ class DesktopForm : Form
             case "files": T(k, arg, AddWin("Files", "folder", Views.Files(this, arg ?? Paths.Root), new Size(800, 520))); break;
             case "code": T(k, arg, AddWin(arg == null ? "Code Editor" : Path.GetFileName(arg), "code", CodeEditor.View(this, arg), new Size(960, 600))); break;
             case "notepad": T(k, arg, AddWin(arg == null ? "Notepad" : Path.GetFileName(arg), "notepad", Views.Notepad(this, arg), new Size(680, 460))); break;
+            case "ai": T(k, arg, AddWin("AI Assistant", "ai", Assistant.View(this), new Size(760, 580))); break;
             case "calc": T(k, arg, AddWin("Calculator", "calc", Views.Calc(), new Size(330, 490))); break;
             case "paint": T(k, arg, AddWin("Paint", "paint", Views.PaintApp(this), new Size(860, 580))); break;
             case "term": T(k, arg, AddWin("Terminal", "term", Views.Term(), new Size(720, 440))); break;

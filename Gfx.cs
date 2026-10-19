@@ -209,6 +209,13 @@ static class Icons
                     using var gl = new Pen(C(255, 255, 255, 36), 2); for (int i = 1; i < 4; i++) gg.DrawLine(gl, 60, 60 + i * 32, 196, 60 + i * 32);
                     using var pn = new Pen(C(110, 255, 210), 9) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round }; gg.DrawLines(pn, new[] { new PointF(64, 160), new PointF(96, 128), new PointF(120, 146), new PointF(150, 92), new PointF(192, 112) });
                 }));
+            case "ai":
+                return Make(g => Tile(g, C(168, 110, 255), C(70, 60, 220), gg =>
+                {
+                    using var bub = RR(48, 58, 160, 112, 30); using (var b = new SolidBrush(C(255, 255, 255))) gg.FillPath(b, bub);
+                    using var tail = new GraphicsPath(); tail.AddPolygon(new[] { new PointF(84, 160), new PointF(84, 204), new PointF(124, 164) }); using (var b = new SolidBrush(C(255, 255, 255))) gg.FillPath(b, tail);
+                    using var st = new GraphicsPath(); st.AddPolygon(new[] { new PointF(128, 74), new PointF(140, 110), new PointF(178, 114), new PointF(148, 134), new PointF(158, 168), new PointF(128, 148), new PointF(98, 168), new PointF(108, 134), new PointF(78, 114), new PointF(116, 110) }); Fill(gg, st, C(168, 110, 255), C(70, 60, 220), 90f);
+                }));
             case "vault":
                 return Make(g => Tile(g, C(130, 120, 255), C(60, 50, 190), gg =>
                 {

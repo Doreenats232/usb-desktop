@@ -1,12 +1,34 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 namespace UsbDesktop;
 
 static class Net
 {
     static readonly HttpClient http = new(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(15), AllowAutoRedirect = true }) { Timeout = Timeout.InfiniteTimeSpan };
     static Net() { http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0) UsbDesktop/2"); }
+
+    // OpenAI-style chat call (used for RelayAPI)
+    public static async Task<string> Chat(string baseUrl, string key, string model, object[] messages, CancellationToken ct)
+    {
+        var url = baseUrl.Trim().TrimEnd('/'); if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) url = "https://" + url;
+        using var req = new HttpRequestMessage(HttpMethod.Post, url + "/v1/chat/completions");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        req.Content = new StringContent(JsonSerializer.Serialize(new { model, messages }), Encoding.UTF8, "application/json");
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct); cts.CancelAfter(TimeSpan.FromSeconds(150));
+        using var resp = await http.SendAsync(req, cts.Token);
+        var body = await resp.Content.ReadAsStringAsync(cts.Token);
+        if (!resp.IsSuccessStatusCode)
+        {
+            string m = body.Length > 200 ? body[..200] : body;
+            try { m = JsonDocument.Parse(body).RootElement.GetProperty("error").GetProperty("message").GetString() ?? m; } catch { }
+            throw new Exception(m);
+        }
+        using var doc = JsonDocument.Parse(body);
+        return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
+    }
 
     public static async Task<string> Text(string url)
     {
