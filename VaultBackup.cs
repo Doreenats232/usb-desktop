@@ -7,7 +7,7 @@ static class VaultBackup
 {
     const string Pre = "usbdesktop-vault-";
     static string Dir => Path.Combine(Paths.Data, "vault");
-    static string Base => Cfg.Get("vault_url").Trim().TrimEnd('/');
+    static string Base => Cfg.Get("vault_url", "https://terabox-vault-backend-1.onrender.com").Trim().TrimEnd('/');
     public static bool Ready => Base != "" && Cfg.Get("vault_key").Trim() != "";
 
     static HttpRequestMessage Rq(HttpMethod m, string path, string? json = null)
