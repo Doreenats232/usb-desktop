@@ -324,6 +324,12 @@ class DesktopForm : Form
         i.Location = new Point(ox + want.c * cw, ox + want.r * ch); Cfg.Set("gpos_" + i.Label, want.c + "," + want.r);
     }
 
+    public BrowserApi? ActiveBrowser()
+    {
+        var w = desk.Controls.OfType<Win>().FirstOrDefault(x => x.Visible && x.Content.Tag is BrowserApi) ?? wins.Select(x => x.w).LastOrDefault(x => x.Content.Tag is BrowserApi);
+        return w?.Content.Tag as BrowserApi;
+    }
+
     public string DesktopSnapshot()
     {
         var icons = string.Join(", ", desk.Controls.OfType<DeskIcon>().OrderBy(i => i.Left).ThenBy(i => i.Top).Select(i => i.Label));

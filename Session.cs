@@ -11,7 +11,7 @@ class WinState
 
 class StateApi { public Func<string?> Get = () => null; public Action<string> Set = _ => { }; }
 
-class BrowserApi { public Func<List<string>> Urls = () => new(); public Action<string> Open = _ => { }; }
+class BrowserApi { public Func<List<string>> Urls = () => new(); public Action<string> Open = _ => { }; public Func<Microsoft.Web.WebView2.Core.CoreWebView2?> Core = () => null; }
 
 // "Sleep": the open windows are saved (encrypted with a key made from your login password) and restored at the next login, on any PC.
 static class Session

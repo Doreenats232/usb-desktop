@@ -413,7 +413,7 @@ input:hover,input:focus{box-shadow:0 2px 12px rgba(32,33,36,.26);border-color:tr
             else if (ctrl && k == Keys.L) { addr.Focus(); addr.SelectAll(); } else if (k == Keys.F5) Cur()?.View.Reload();
         }
 
-        root.Tag = new BrowserApi { Urls = () => tabs.Tabs.Select(t => t.Url).Where(u => u != "" && !u.StartsWith("data:") && !u.StartsWith("about:")).ToList(), Open = u => AddTab(u) };
+        root.Tag = new BrowserApi { Urls = () => tabs.Tabs.Select(t => t.Url).Where(u => u != "" && !u.StartsWith("data:") && !u.StartsWith("about:")).ToList(), Open = u => AddTab(u), Core = () => Cur()?.View.CoreWebView2 };
         bool started = false; root.HandleCreated += (_, _) => { if (!started) { started = true; DrawBms(); AddTab(url ?? ""); } };
         root.Disposed += async (_, _) => { try { await FlushAll(); } catch { } };
         return root;

@@ -109,6 +109,7 @@ static class Assistant
             "paths below are relative to the USB root: [[list:Desktop]] lists a folder; [[search:word]] searches file names and text; [[sysinfo:]] gives OS, RAM, USB space, battery and Wi-Fi; [[desktop:]] shows icons, windows and the sticky note; " +
             "[[sticky:new text]] replaces the sticky note and [[stickyread:]] reads it; [[mkdir:Desktop/New]]; [[move:Desktop/a.txt|Desktop/Folder]]; [[copy:src|dst]]; [[rename:Desktop/a.txt|b.txt]]; [[delete:Desktop/a.txt]] (goes to the Recycle Bin); " +
             "[[schedule:startup|open:notepad]], [[schedule:daily 07:30|remind:text]] or [[schedule:every 30|remind:text]] (every N minutes, 5 or more) create a task (allowed actions: open:APP, web:URL, note:Title|text, sticky:text, remind:text, arrange:), [[tasks:]] lists them, [[unschedule:id or words]] removes one, tasks only run while USB Desktop is open; " +
+            "these control the Browser window: [[scroll:down|up|top|bottom]], [[nav:back|forward|reload]], [[goto:address or search words]], [[play:song or video name]] searches YouTube and plays the first result, [[media:play|pause|toggle|mute|unmute|next|fullscreen]], [[page:]] reads the page title, text and clickable items, [[click:text of a button or link]], [[type:box name|text to type]], [[key:enter]] presses Enter; open a Browser first with [[web:...]] if none is open; " +
             "[[arrange:]] tidies desktop icons; [[undo:]] undoes the last change; [[clipread:]] and [[clipwrite:text]] use the clipboard; [[eject:]] safely ejects this USB; [[lock:]] locks the PC; [[sleep:]] sleeps the PC. " +
             "Right now: " + snap.Replace("\n", " | ") + ". " +
             "Only use a tag when it helps or the user asks. Never mention these tags in your words. Keep replies short because they may be read out loud.";
@@ -224,7 +225,7 @@ static class Assistant
 
         async Task<(string shown, string feedback)> Handle(string reply)
         {
-            var fb = new List<string>(); var muts = new List<(string k, string a)>();
+            var fb = new List<string>(); var muts = new List<(string k, string a)>(); bool trustB = Cfg.Get("ai_trust", "0") == "1";
             bool Yes(string t) => MessageBox.Show(t, "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
             foreach (Match m in Act.Matches(reply))
             {
@@ -257,6 +258,7 @@ static class Assistant
                         case "sysinfo": fb.Add(await Task.Run(AiActions.SysInfo)); break;
                         case "desktop": fb.Add(sh.DesktopSnapshot()); break;
                         case "tasks": fb.Add(Sched.ListText()); break;
+                        case "scroll": case "nav": case "goto": case "play": case "media": case "click": case "type": case "key": case "page": { var br = await BrowserCtl.Do(sh, k, a, trustB, Yes); if (br != "") fb.Add(br); break; }
                         case "unschedule": fb.Add(Sched.Remove(a)); break;
                         case "stickyread": fb.Add("Sticky note: " + Cfg.Get("sticky").Replace("¶", "\n")); break;
                         case "clipwrite": try { Clipboard.SetText(a); fb.Add("Copied to the clipboard."); } catch { fb.Add("Couldn't write the clipboard."); } break;
