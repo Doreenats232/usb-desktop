@@ -196,6 +196,9 @@ static class VmApp
         pg.H("Full OS (Linux)"); pg.P("Runs a real Linux computer inside a window. Everything is saved on the USB.", true);
         pg.P("Easy setup", false, true, 13, 14); pg.P("One button. It looks for what's already on this USB, downloads and installs whatever is missing, asks you only a few simple questions, and starts Linux ready to log in.", true);
         var rA = pg.Row(6); B(rA, "Set up Full OS automatically", () => Auto());
+        var lblPick = pg.Row(2); lblPick.Controls.Add(new Label { Text = "Or pick one directly (each one sets itself up):", AutoSize = true, ForeColor = Ui.Text, BackColor = Color.Transparent, Font = Ui.F(10.5f, true) });
+        var rD1 = pg.Row(6); var rD2 = pg.Row(10);
+        for (int di2 = 0; di2 < Distros.Length; di2++) { int qd9 = di2; B(di2 < 4 ? rD1 : rD2, Distros[di2].Name.Replace(" (Android-x86 9)", "") + (File.Exists(DiskFor(Distros[di2].Id)) ? "  ✓" : ""), () => Auto(qd9)); }
         pg.P("Manual setup (optional)", false, true, 12, 20);
         pg.P("1  QEMU engine", false, true, 11, 12); s1 = pg.P("", true); var r1 = pg.Row(2);
         B(r1, "Install QEMU", async () =>
@@ -263,7 +266,7 @@ static class VmApp
             s1.ForeColor = q ? Color.FromArgb(110, 231, 160) : Ui.Sub; s2.ForeColor = i ? Color.FromArgb(110, 231, 160) : Ui.Sub; s3.ForeColor = d ? Color.FromArgb(110, 231, 160) : Ui.Sub;
             start.Enabled = q && d && !on && (boot.SelectedIndex == 0 || i); stop.Enabled = on; if (on) st.Text = "Linux is running";
         }
-        async Task Auto()
+        async Task Auto(int pre = -1)
         {
             var cts = new CancellationTokenSource(); var card = sh.NewDl("Setting up Full OS", cts, "");
             try
@@ -273,7 +276,7 @@ static class VmApp
                 var have = Distros.Where(x => File.Exists(DiskFor(x.Id))).Select(x => x.Name).ToList();
                 card.Stage("Step 1/5 · Found on your USB:  QEMU " + (foundQ != null ? "yes" : "no") + "  ·  Linux: " + (have.Count > 0 ? string.Join(", ", have) : "none yet") + (foundIso != null ? "  ·  installer ISO yes" : ""), 6); await Task.Delay(1800);
                 card.Stage("Step 2/5 · A few quick questions…", 8);
-                int di = Ask.Choose("Choose your Linux", "Pick the system you want. Ones already on your USB are marked.", Distros.Select(x => x.Name + (File.Exists(DiskFor(x.Id)) ? "   (on your USB)" : "")).ToArray());
+                int di = pre >= 0 ? pre : Ask.Choose("Choose your Linux", "Pick the system you want. Ones already on your USB are marked.", Distros.Select(x => x.Name + (File.Exists(DiskFor(x.Id)) ? "   (on your USB)" : "")).ToArray());
                 if (di < 0) { card.Fail("Cancelled"); return; }
                 var dist = Distros[di]; Cfg.Set("vm_distro", dist.Id); pendingDistro = dist.Id;
                 bool hadDisk = File.Exists(DiskFor(dist.Id)); bool fresh = !hadDisk; bool desk = dist.Desktop && dist.Kind != "kali"; int gb = 16; string pw = "";

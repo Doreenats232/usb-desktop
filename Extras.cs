@@ -152,3 +152,22 @@ static class Traces
         return n;
     }
 }
+
+// Website as app: a desktop icon that opens a site in the built-in browser.
+static class WebApps
+{
+    public static (string name, string url)? Prompt()
+    {
+        using var f = new Form { Text = "Add a website as an app", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen, ClientSize = new Size(440, 190), MaximizeBox = false, MinimizeBox = false, TopMost = true };
+        var l1 = new Label { Text = "Website address (e.g. youtube.com)", Left = 16, Top = 14, AutoSize = true };
+        var u = new TextBox { Left = 16, Top = 36, Width = 408 };
+        var l2 = new Label { Text = "Name on the desktop", Left = 16, Top = 72, AutoSize = true };
+        var n = new TextBox { Left = 16, Top = 94, Width = 408 };
+        var ok = new Button { Text = "Add", Left = 16, Top = 136, Width = 110, Height = 32, DialogResult = DialogResult.OK };
+        f.Controls.AddRange(new Control[] { l1, u, l2, n, ok }); f.AcceptButton = ok;
+        if (f.ShowDialog() != DialogResult.OK) return null;
+        var url = u.Text.Trim(); if (url == "") return null; if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) url = "https://" + url;
+        var name = n.Text.Trim(); if (name == "") { try { name = new Uri(url).Host.Replace("www.", ""); } catch { name = "Website"; } }
+        return (name, url);
+    }
+}

@@ -285,7 +285,7 @@ class DesktopForm : Form
     {
         var ic = new DeskIcon(label, img, act, Ui.D(Cfg.Int("icon", 56))) { FilePath = path };
         ic.Picked = i => { foreach (var o in desk.Controls.OfType<DeskIcon>()) { o.Sel = o == i; o.Invalidate(); } };
-        ic.Dropped = i => Cfg.Set("pos_" + i.Label, i.Left + "," + i.Top);
+        ic.Dropped = Settle;
         var m = new ContextMenuStrip(); m.Items.Add("Open", null, (_, _) => act());
         if (path != null)
         {
@@ -295,6 +295,40 @@ class DesktopForm : Form
         ic.ContextMenuStrip = m; return ic;
     }
 
+    // After dragging an icon: drop it into a folder if released on one, otherwise never leave it overlapping another icon.
+    void Settle(DeskIcon i)
+    {
+        var pt = desk.PointToClient(Cursor.Position);
+        var tgt = desk.Controls.OfType<DeskIcon>().FirstOrDefault(o => o != i && o.Bounds.Contains(pt));
+        if (tgt != null && i.FilePath != null && tgt.FilePath != null && Directory.Exists(tgt.FilePath) && !string.Equals(tgt.FilePath, i.FilePath, StringComparison.OrdinalIgnoreCase) && !tgt.FilePath.StartsWith(i.FilePath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var dest = U.Unique(tgt.FilePath, Path.GetFileName(i.FilePath));
+                if (Directory.Exists(i.FilePath)) Directory.Move(i.FilePath, dest); else File.Move(i.FilePath, dest);
+                Reload(); Toast("Moved into " + tgt.Label); return;
+            }
+            catch (Exception ex) { Toast("Couldn't move it: " + ex.Message); }
+        }
+        var others = desk.Controls.OfType<DeskIcon>().Where(o => o != i).Select(o => o.Bounds).ToList();
+        bool Hit(Point p) => others.Any(r => r.IntersectsWith(new Rectangle(p, i.Size)));
+        if (Hit(i.Location))
+        {
+            int sx = i.Width + Ui.D(4), sy = i.Height + Ui.D(4); var best = i.Location; bool found = false;
+            for (int ring = 1; ring < 30 && !found; ring++)
+                for (int dy = -ring; dy <= ring && !found; dy++)
+                    for (int dx = -ring; dx <= ring && !found; dx++)
+                    {
+                        if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != ring) continue;
+                        var p = new Point(i.Left + dx * sx, i.Top + dy * sy);
+                        if (p.X < 0 || p.Y < 0 || p.X + i.Width > desk.Width || p.Y + i.Height > desk.Height) continue;
+                        if (!Hit(p)) { best = p; found = true; }
+                    }
+            i.Location = best;
+        }
+        Cfg.Set("pos_" + i.Label, i.Left + "," + i.Top);
+    }
+
     public void Reload()
     {
         foreach (var c in desk.Controls.OfType<DeskIcon>().ToList()) { desk.Controls.Remove(c); c.Dispose(); }
@@ -302,7 +336,7 @@ class DesktopForm : Form
         int sz = Ui.D(Cfg.Int("icon", 56)), cw = sz + Ui.D(46), ch = sz + Ui.D(52);
         var list = new List<DeskIcon>();
         foreach (var k in OnDesk) { var a = Catalog.First(x => x.K == k); var key = k; list.Add(MakeIcon(k == "files" ? "This PC" : a.N, Icons.App(IconKey(k)), () => Launch(key), null)); }
-        foreach (var e in Directory.GetFileSystemEntries(Paths.Desktop).OrderByDescending(Directory.Exists).ThenBy(x => x)) { var p = e; list.Add(MakeIcon(Path.GetFileName(p), U.IconFor(p), () => OpenFile(p), p)); }
+        foreach (var e in Directory.GetFileSystemEntries(Paths.Desktop).OrderByDescending(Directory.Exists).ThenBy(x => x)) { var p = e; list.Add(p.EndsWith(".webapp", StringComparison.OrdinalIgnoreCase) ? MakeIcon(Path.GetFileNameWithoutExtension(p), Icons.App("web"), () => OpenFile(p), p) : MakeIcon(Path.GetFileName(p), U.IconFor(p), () => OpenFile(p), p)); }
         int rows = Math.Max(1, (desk.Height - Ui.D(10)) / ch), n = 0;
         foreach (var ic in list)
         {
@@ -320,11 +354,19 @@ class DesktopForm : Form
         void Fin(bool ok)
         {
             if (done) return; done = true; var nn = tb.Text.Trim(); desk.Controls.Remove(tb); tb.Dispose();
+            if (ok && ic.FilePath.EndsWith(".webapp", StringComparison.OrdinalIgnoreCase) && !nn.EndsWith(".webapp", StringComparison.OrdinalIgnoreCase)) nn += ".webapp";
             if (ok && nn != "" && nn != ic.Label) { try { var d = Path.Combine(Paths.Desktop, nn); if (Directory.Exists(ic.FilePath)) Directory.Move(ic.FilePath, d); else File.Move(ic.FilePath, d); } catch { Toast("Couldn't rename that"); } }
             Reload();
         }
         tb.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { Fin(true); e.SuppressKeyPress = true; } else if (e.KeyCode == Keys.Escape) Fin(false); };
         tb.LostFocus += (_, _) => Fin(true);
+    }
+
+    void NewWebApp()
+    {
+        var r = WebApps.Prompt(); if (r == null) return;
+        var (name, url) = r.Value; foreach (var ch in Path.GetInvalidFileNameChars()) name = name.Replace(ch, '_');
+        var p = U.Unique(Paths.Desktop, name + ".webapp"); File.WriteAllText(p, url); Reload(); Toast("Added " + name + " to your desktop");
     }
 
     void NewItem(bool dir)
@@ -338,7 +380,7 @@ class DesktopForm : Form
     {
         var cm = new ContextMenuStrip(); var view = new ToolStripMenuItem("View");
         foreach (var (n, v) in new[] { ("Small icons", 44), ("Medium icons", 56), ("Large icons", 72) }) { var vv = v; view.DropDownItems.Add(n, null, (_, _) => { Cfg.Set("icon", vv.ToString()); Reload(); }); }
-        var nw = new ToolStripMenuItem("New"); nw.DropDownItems.Add("Folder", null, (_, _) => NewItem(true)); nw.DropDownItems.Add("Text document", null, (_, _) => NewItem(false));
+        var nw = new ToolStripMenuItem("New"); nw.DropDownItems.Add("Folder", null, (_, _) => NewItem(true)); nw.DropDownItems.Add("Text document", null, (_, _) => NewItem(false)); nw.DropDownItems.Add("Website as app…", null, (_, _) => NewWebApp());
         cm.Items.Add(view); cm.Items.Add(nw); cm.Items.Add("Refresh", null, (_, _) => Reload()); cm.Items.Add(new ToolStripSeparator());
         cm.Items.Add("Take screenshot", null, (_, _) => Shot()); cm.Items.Add("Display settings", null, (_, _) => Launch("settings", "1")); cm.Items.Add("Personalize", null, (_, _) => Launch("settings", "0"));
         desk.ContextMenuStrip = cm;
@@ -367,6 +409,7 @@ class DesktopForm : Form
     {
         if (Directory.Exists(p)) { Launch("files", p); return; }
         var ext = Path.GetExtension(p).ToLower();
+        if (ext == ".webapp") { try { Launch("web", File.ReadAllText(p).Trim()); } catch { } return; }
         if (new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif" }.Contains(ext)) { Launch("photo", p); return; }
         if (new[] { ".pdf", ".mp4", ".webm", ".mp3", ".wav", ".ogg", ".m4a", ".svg", ".webp", ".opus" }.Contains(ext)) { Launch("web", new Uri(p).AbsoluteUri); return; }
         if (ext == ".zip") { _ = ExtractHere(p); return; }
