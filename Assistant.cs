@@ -151,8 +151,8 @@ static class Assistant
         var bSave = new RoundButton { Text = "Save", Pill = true, BackColor = Theme.Accent, ForeColor = Color.White, Height = Ui.D(34), Width = Ui.D(120), Dock = DockStyle.Top };
         Panel Gap(int h) => new Panel { Dock = DockStyle.Top, Height = Ui.D(h), BackColor = Color.Transparent };
         foreach (var bx in new Control[] { uBox, kBox, mBox, nBox, yBox }) { bx.Dock = DockStyle.Top; bx.Height = Ui.D(38); }
-        var chk = new CheckBox { Text = "Let it move, copy, rename and delete files without asking each time (all changes are logged and can be undone)", Dock = DockStyle.Top, Height = Ui.D(46), ForeColor = Ui.Text, BackColor = Color.Transparent, Font = Ui.F(9.5f), Checked = Cfg.Get("ai_trust", "0") == "1" };
-        chk.CheckedChanged += (_, _) => Cfg.Set("ai_trust", chk.Checked ? "1" : "0");
+        var chk = new CheckBox { Text = "Ask me before every action (off = it only asks for risky things: shutting down/locking the PC, sensitive deletes, unknown commands, purchases)", Dock = DockStyle.Top, Height = Ui.D(46), ForeColor = Ui.Text, BackColor = Color.Transparent, Font = Ui.F(9.5f), Checked = Cfg.Get("ai_ask", "0") == "1" };
+        chk.CheckedChanged += (_, _) => Cfg.Set("ai_ask", chk.Checked ? "1" : "0");
         set.Controls.Add(bSave); set.Controls.Add(Gap(6)); set.Controls.Add(chk); set.Controls.Add(Gap(6)); set.Controls.Add(yBox); set.Controls.Add(Gap(6)); set.Controls.Add(nBox); set.Controls.Add(Gap(6)); set.Controls.Add(mBox); set.Controls.Add(Gap(6)); set.Controls.Add(kBox); set.Controls.Add(Gap(6)); set.Controls.Add(uBox);
 
         // chat + input
@@ -225,7 +225,7 @@ static class Assistant
 
         async Task<(string shown, string feedback)> Handle(string reply)
         {
-            var fb = new List<string>(); var muts = new List<(string k, string a)>(); bool trustB = Cfg.Get("ai_trust", "0") == "1";
+            var fb = new List<string>(); var muts = new List<(string k, string a)>(); bool trustB = Cfg.Get("ai_ask", "0") != "1";
             bool Yes(string t) => MessageBox.Show(t, "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
             foreach (Match m in Act.Matches(reply))
             {
@@ -238,13 +238,13 @@ static class Assistant
                             {
                                 var full = AiActions.Resolve(a); if (full == null) { fb.Add("Reading " + a + " was not allowed."); break; }
                                 var rel = Path.GetRelativePath(Paths.Root, full);
-                                if (!Yes("The assistant wants to read this file and see its text:\n\n" + rel + "\n\nAllow?")) { fb.Add("The user did not allow reading " + a + "."); break; }
+                                if (!trustB && !Yes("The assistant wants to read this file and see its text:\n\n" + rel + "\n\nAllow?")) { fb.Add("The user did not allow reading " + a + "."); break; }
                                 if (!File.Exists(full)) { fb.Add("File not found: " + a); break; }
                                 var t = File.ReadAllText(full); if (t.Length > 6000) t = t[..6000] + "\n[cut off]"; fb.Add("Contents of " + a + ":\n" + t); break;
                             }
                         case "run":
                             {
-                                if (MessageBox.Show("The assistant wants to run this command on this PC:\n\n" + a + "\n\nOnly allow it if you understand it. Run it?", "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) { fb.Add("The user did not allow running that command."); break; }
+                                if (!(trustB && AiActions.SafeCmd(a)) && MessageBox.Show("The assistant wants to run this command on this PC:\n\n" + a + "\n\nOnly allow it if you understand it. Run it?", "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) { fb.Add("The user did not allow running that command."); break; }
                                 var o = await Task.Run(() =>
                                 {
                                     using var pr = Process.Start(new ProcessStartInfo("cmd.exe", "/c " + a) { RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, UseShellExecute = false, WorkingDirectory = Paths.Root })!;
@@ -262,8 +262,8 @@ static class Assistant
                         case "unschedule": fb.Add(Sched.Remove(a)); break;
                         case "stickyread": fb.Add("Sticky note: " + Cfg.Get("sticky").Replace("¶", "\n")); break;
                         case "clipwrite": try { Clipboard.SetText(a); fb.Add("Copied to the clipboard."); } catch { fb.Add("Couldn't write the clipboard."); } break;
-                        case "clipread": if (Yes("The assistant wants to read what is on your clipboard. Allow?")) { var c = Clipboard.ContainsText() ? Clipboard.GetText() : ""; fb.Add("Clipboard: " + (c.Length > 2000 ? c[..2000] : c)); } else fb.Add("The user did not allow reading the clipboard."); break;
-                        case "search": if (Yes("The assistant wants to search your USB files for:\n\n" + a + "\n\nAllow?")) fb.Add(await Task.Run(() => AiActions.Search(a))); else fb.Add("The user did not allow searching."); break;
+                        case "clipread": if (trustB || Yes("The assistant wants to read what is on your clipboard. Allow?")) { var c = Clipboard.ContainsText() ? Clipboard.GetText() : ""; fb.Add("Clipboard: " + (c.Length > 2000 ? c[..2000] : c)); } else fb.Add("The user did not allow reading the clipboard."); break;
+                        case "search": if (trustB || Yes("The assistant wants to search your USB files for:\n\n" + a + "\n\nAllow?")) fb.Add(await Task.Run(() => AiActions.Search(a))); else fb.Add("The user did not allow searching."); break;
                         default: muts.Add((k, a)); break;
                     }
                 }
@@ -271,8 +271,8 @@ static class Assistant
             }
             if (muts.Count > 0)
             {
-                bool trust = Cfg.Get("ai_trust", "0") == "1";
-                bool need = muts.Any(x => x.k is "eject" or "lock" or "sleep" or "schedule" || (!trust && x.k is "move" or "copy" or "rename" or "delete"));
+                bool trust = trustB;
+                bool need = muts.Any(x => x.k is "eject" or "lock" or "sleep" || (x.k == "delete" && AiActions.SensitiveDelete(x.a)) || (!trust && x.k is "move" or "copy" or "rename" or "delete" or "schedule"));
                 if (need && MessageBox.Show("The assistant wants to:\n\n" + string.Join("\n", muts.Select(x => "• " + AiActions.Describe(x.k, x.a))) + "\n\nAllow? (File changes can be undone with the Undo button.)", "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) fb.Add("The user did not allow those actions.");
                 else fb.AddRange(AiActions.RunAll(sh, muts).Where(x => x != ""));
             }

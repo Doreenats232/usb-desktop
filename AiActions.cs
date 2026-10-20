@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 namespace UsbDesktop;
 
@@ -50,6 +51,24 @@ static class AiActions
         "schedule" => "Schedule a task: " + Sched.Describe(a),
         _ => k + " " + a
     };
+
+    // Deleting asks only for sensitive things: non-empty folders, anything outside the Desktop, documents/archives/keys/databases, or names that sound private.
+    public static bool SensitiveDelete(string a)
+    {
+        var p = Resolve(a); if (p == null) return true;
+        if (Directory.Exists(p)) { try { return Directory.EnumerateFileSystemEntries(p).Any(); } catch { return true; } }
+        if (!p.StartsWith(Paths.Desktop.TrimEnd(Sep) + Sep, StringComparison.OrdinalIgnoreCase)) return true;
+        var n = Path.GetFileName(p).ToLowerInvariant(); var ext = Path.GetExtension(n);
+        if (new[] { ".docx", ".doc", ".pdf", ".xlsx", ".xls", ".pptx", ".zip", ".7z", ".rar", ".kdbx", ".key", ".pem", ".pfx", ".db", ".sqlite", ".bak", ".iso", ".qcow2", ".exe" }.Contains(ext)) return true;
+        return Regex.IsMatch(n, "password|passwd|secret|private|vault|backup|bank|tax|certificate|credential|token|wallet|recovery");
+    }
+
+    // Harmless read-only commands the assistant may run without asking (no chaining or redirects).
+    public static bool SafeCmd(string c)
+    {
+        c = c.Trim(); if (Regex.IsMatch(c, @"[&|<>^%]")) return false;
+        return Regex.IsMatch(c, @"^(date /t|time /t|ver|hostname|whoami|ipconfig( /all)?|dir( .*)?|echo .*|tasklist|netsh wlan show \w+|systeminfo|vol)$", RegexOptions.IgnoreCase);
+    }
 
     public static string List(string a)
     {

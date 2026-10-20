@@ -8,7 +8,7 @@ namespace UsbDesktop;
 // it never types into password fields, and reading the page text asks first.
 static class BrowserCtl
 {
-    static readonly Regex Danger = new(@"\b(buy|pay|purchase|order|checkout|delete|remove|transfer|send money|confirm|subscribe|donate|unsubscribe|sign ?out|log ?out|place order|withdraw)\b", RegexOptions.IgnoreCase);
+    static readonly Regex Danger = new(@"\b(buy|pay|purchase|checkout|delete|transfer|send money|donate|place order|withdraw)\b", RegexOptions.IgnoreCase);
 
     static async Task<string> Js(CoreWebView2 c, string js)
     {
@@ -84,7 +84,7 @@ static class BrowserCtl
                 case "click":
                     {
                         var found = await Js(c, FindClick.Replace("__ARG__", JsonSerializer.Serialize(arg.Trim()))); if (found == "") return "ERR: I couldn't find anything to click that matches \"" + arg.Trim() + "\".";
-                        if (Danger.IsMatch(found)) { if (!confirm("The assistant wants to click this button, which looks like it buys, deletes or signs out:\n\n" + found + "\n\nAllow?")) return "The user did not allow that click."; }
+                        if (Danger.IsMatch(found)) { if (!confirm("The assistant wants to click this button, which looks like it spends money or deletes something:\n\n" + found + "\n\nAllow?")) return "The user did not allow that click."; }
                         else if (!trust && !confirm("The assistant wants to click in the Browser:\n\n" + found + "\n\nAllow?")) return "The user did not allow that click.";
                         var r = await Js(c, "(function(){var e=document.querySelector('[data-ucl]');if(e){e.click();return 'ok';}return '';})()"); return r == "ok" ? "" : "ERR: the click didn't work.";
                     }
