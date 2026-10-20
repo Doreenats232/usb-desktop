@@ -324,6 +324,25 @@ class DesktopForm : Form
         i.Location = new Point(ox + want.c * cw, ox + want.r * ch); Cfg.Set("gpos_" + i.Label, want.c + "," + want.r);
     }
 
+    public string DesktopSnapshot()
+    {
+        var icons = string.Join(", ", desk.Controls.OfType<DeskIcon>().OrderBy(i => i.Left).ThenBy(i => i.Top).Select(i => i.Label));
+        var open = string.Join(", ", wins.Where(x => x.w.Visible).Select(x => x.w.Title)); var note = Cfg.Get("sticky").Replace("¶", " / ");
+        var t = "Desktop icons: " + icons + "\nOpen windows: " + (open == "" ? "none" : open) + "\nSticky note: " + (note == "" ? "(empty)" : note);
+        return t.Length > 1500 ? t[..1500] : t;
+    }
+    public string ArrangeIcons()
+    {
+        var icons = desk.Controls.OfType<DeskIcon>().ToList(); var old = string.Join("¦", icons.Select(i => i.Label + "§" + Cfg.Get("gpos_" + i.Label) + "§" + Cfg.Get("pos_" + i.Label)));
+        foreach (var i in icons) { Cfg.Set("gpos_" + i.Label, ""); Cfg.Set("pos_" + i.Label, ""); }
+        Reload(); return old;
+    }
+    public void RestoreIcons(string old)
+    {
+        foreach (var part in old.Split('¦')) { var q = part.Split('§'); if (q.Length == 3) { Cfg.Set("gpos_" + q[0], q[1]); Cfg.Set("pos_" + q[0], q[2]); } }
+        Reload();
+    }
+
     public void Reload()
     {
         foreach (var c in desk.Controls.OfType<DeskIcon>().ToList()) { desk.Controls.Remove(c); c.Dispose(); }

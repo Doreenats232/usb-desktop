@@ -93,7 +93,7 @@ static class Assistant
     static System.Speech.Synthesis.SpeechSynthesizer? synth;
     const string DefUrl = "https://relayapi-c5ah.onrender.com";
 
-    static string Sys()
+    static string Sys(string snap)
     {
         string name = Cfg.Get("ai_name", "Morales"), user = Cfg.Get("ai_user", "Boss"); string mem = "";
         try { if (File.Exists(MemFile)) mem = string.Join("; ", File.ReadAllLines(MemFile).TakeLast(60)); } catch { }
@@ -105,7 +105,11 @@ static class Assistant
             "[[note:Title|text of the note]] saves a text file on the Desktop; " +
             "[[read:Desktop/file.txt]] reads a text file from the USB (you will get its text back); " +
             "[[run:command]] runs a Windows command (cmd) after the user approves, and you get its output back; " +
-            "[[remember:a short fact about the user]] saves something to remember for next time. " +
+            "[[remember:a short fact about the user]] saves something to remember for next time; " +
+            "paths below are relative to the USB root: [[list:Desktop]] lists a folder; [[search:word]] searches file names and text; [[sysinfo:]] gives OS, RAM, USB space, battery and Wi-Fi; [[desktop:]] shows icons, windows and the sticky note; " +
+            "[[sticky:new text]] replaces the sticky note and [[stickyread:]] reads it; [[mkdir:Desktop/New]]; [[move:Desktop/a.txt|Desktop/Folder]]; [[copy:src|dst]]; [[rename:Desktop/a.txt|b.txt]]; [[delete:Desktop/a.txt]] (goes to the Recycle Bin); " +
+            "[[arrange:]] tidies desktop icons; [[undo:]] undoes the last change; [[clipread:]] and [[clipwrite:text]] use the clipboard; [[eject:]] safely ejects this USB; [[lock:]] locks the PC; [[sleep:]] sleeps the PC. " +
+            "Right now: " + snap.Replace("\n", " | ") + ". " +
             "Only use a tag when it helps or the user asks. Never mention these tags in your words. Keep replies short because they may be read out loud.";
     }
 
@@ -133,10 +137,10 @@ static class Assistant
         var btns = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, BackColor = Color.Transparent, Padding = new Padding(0, Ui.D(16), Ui.D(8), 0) };
         RoundButton TB(string t, int w) { var b = new RoundButton { Text = t, Pill = true, BackColor = Ui.Line, ForeColor = Ui.Text, Width = Ui.D(w), Height = Ui.D(32), Font = Ui.F(9), Margin = new Padding(Ui.D(4), 0, 0, 0) }; btns.Controls.Add(b); return b; }
         head.Controls.Add(orb); head.Controls.Add(title); head.Controls.Add(sub); head.Controls.Add(btns);
-        var bSet = TB("Settings", 82); var bClr = TB("Clear", 64); var bVoice = TB(Cfg.Get("ai_speak", "0") == "1" ? "Voice: On" : "Voice: Off", 92); var bTalk = TB("Talk", 76);
+        var bSet = TB("Settings", 82); var bClr = TB("Clear", 64); var bVoice = TB(Cfg.Get("ai_speak", "0") == "1" ? "Voice: On" : "Voice: Off", 92); var bTalk = TB("Talk", 76); var bUndo = TB("Undo", 64);
 
         // settings
-        var set = new Panel { Dock = DockStyle.Top, Height = Ui.D(282), BackColor = Ui.Surface2, Visible = false, Padding = new Padding(Ui.D(14), Ui.D(4), Ui.D(14), Ui.D(8)) };
+        var set = new Panel { Dock = DockStyle.Top, Height = Ui.D(350), BackColor = Ui.Surface2, Visible = false, Padding = new Padding(Ui.D(14), Ui.D(4), Ui.D(14), Ui.D(8)) };
         var (uBox, uTb) = Ui.Input("RelayAPI address", false, 38); uTb.Text = Cfg.Get("ai_url", DefUrl);
         var (kBox, kTb) = Ui.Input("RelayAPI key", true, 38); kTb.Text = Cfg.Get("ai_key");
         var (mBox, mTb) = Ui.Input("Provider name (optional: empty uses your first provider)", false, 38); mTb.Text = Cfg.Get("ai_model");
@@ -145,7 +149,9 @@ static class Assistant
         var bSave = new RoundButton { Text = "Save", Pill = true, BackColor = Theme.Accent, ForeColor = Color.White, Height = Ui.D(34), Width = Ui.D(120), Dock = DockStyle.Top };
         Panel Gap(int h) => new Panel { Dock = DockStyle.Top, Height = Ui.D(h), BackColor = Color.Transparent };
         foreach (var bx in new Control[] { uBox, kBox, mBox, nBox, yBox }) { bx.Dock = DockStyle.Top; bx.Height = Ui.D(38); }
-        set.Controls.Add(bSave); set.Controls.Add(Gap(8)); set.Controls.Add(yBox); set.Controls.Add(Gap(6)); set.Controls.Add(nBox); set.Controls.Add(Gap(6)); set.Controls.Add(mBox); set.Controls.Add(Gap(6)); set.Controls.Add(kBox); set.Controls.Add(Gap(6)); set.Controls.Add(uBox);
+        var chk = new CheckBox { Text = "Let it move, copy, rename and delete files without asking each time (all changes are logged and can be undone)", Dock = DockStyle.Top, Height = Ui.D(46), ForeColor = Ui.Text, BackColor = Color.Transparent, Font = Ui.F(9.5f), Checked = Cfg.Get("ai_trust", "0") == "1" };
+        chk.CheckedChanged += (_, _) => Cfg.Set("ai_trust", chk.Checked ? "1" : "0");
+        set.Controls.Add(bSave); set.Controls.Add(Gap(6)); set.Controls.Add(chk); set.Controls.Add(Gap(6)); set.Controls.Add(yBox); set.Controls.Add(Gap(6)); set.Controls.Add(nBox); set.Controls.Add(Gap(6)); set.Controls.Add(mBox); set.Controls.Add(Gap(6)); set.Controls.Add(kBox); set.Controls.Add(Gap(6)); set.Controls.Add(uBox);
 
         // chat + input
         var chat = new ChatList { Dock = DockStyle.Fill, Letter = aiName()[..1].ToUpper() };
@@ -217,37 +223,55 @@ static class Assistant
 
         async Task<(string shown, string feedback)> Handle(string reply)
         {
-            var fb = new List<string>();
+            var fb = new List<string>(); var muts = new List<(string k, string a)>();
+            bool Yes(string t) => MessageBox.Show(t, "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
             foreach (Match m in Act.Matches(reply))
             {
-                var k = m.Groups[1].Value.ToLowerInvariant(); var a = m.Groups[2].Value.Trim();
+                var k = m.Groups[1].Value.ToLowerInvariant(); var a = m.Groups[2].Value.Trim(); if (!AiActions.Kinds.Contains(k)) continue;
                 try
                 {
-                    if (k == "read")
+                    switch (k)
                     {
-                        var full = Path.GetFullPath(Path.Combine(Paths.Root, a.Replace('/', Path.DirectorySeparatorChar)));
-                        var rel = Path.GetRelativePath(Paths.Root, full);
-                        if (rel.StartsWith("..") || rel.Split(Path.DirectorySeparatorChar)[0].ToLowerInvariant() is "data" or "vm") { fb.Add("Reading " + a + " was not allowed."); continue; }
-                        if (MessageBox.Show("The assistant wants to read this file and see its text:\n\n" + rel + "\n\nAllow?", "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { fb.Add("The user did not allow reading " + a + "."); continue; }
-                        if (!File.Exists(full)) { fb.Add("File not found: " + a); continue; }
-                        var t = File.ReadAllText(full); if (t.Length > 6000) t = t[..6000] + "\n[cut off]"; fb.Add("Contents of " + a + ":\n" + t);
-                    }
-                    else if (k == "run")
-                    {
-                        if (MessageBox.Show("The assistant wants to run this command on this PC:\n\n" + a + "\n\nOnly allow it if you understand it. Run it?", "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) { fb.Add("The user did not allow running that command."); continue; }
-                        var o = await Task.Run(() =>
-                        {
-                            using var pr = Process.Start(new ProcessStartInfo("cmd.exe", "/c " + a) { RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, UseShellExecute = false, WorkingDirectory = Paths.Root })!;
-                            var so = pr.StandardOutput.ReadToEndAsync(); var se = pr.StandardError.ReadToEndAsync();
-                            if (!pr.WaitForExit(20000)) { try { pr.Kill(true); } catch { } return "[stopped after 20 seconds]"; }
-                            var r = so.Result + se.Result; return r.Length > 4000 ? r[..4000] + "\n[cut off]" : r;
-                        });
-                        fb.Add("Output of " + a + ":\n" + (o.Trim() == "" ? "(no output)" : o));
+                        case "read":
+                            {
+                                var full = AiActions.Resolve(a); if (full == null) { fb.Add("Reading " + a + " was not allowed."); break; }
+                                var rel = Path.GetRelativePath(Paths.Root, full);
+                                if (!Yes("The assistant wants to read this file and see its text:\n\n" + rel + "\n\nAllow?")) { fb.Add("The user did not allow reading " + a + "."); break; }
+                                if (!File.Exists(full)) { fb.Add("File not found: " + a); break; }
+                                var t = File.ReadAllText(full); if (t.Length > 6000) t = t[..6000] + "\n[cut off]"; fb.Add("Contents of " + a + ":\n" + t); break;
+                            }
+                        case "run":
+                            {
+                                if (MessageBox.Show("The assistant wants to run this command on this PC:\n\n" + a + "\n\nOnly allow it if you understand it. Run it?", "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) { fb.Add("The user did not allow running that command."); break; }
+                                var o = await Task.Run(() =>
+                                {
+                                    using var pr = Process.Start(new ProcessStartInfo("cmd.exe", "/c " + a) { RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, UseShellExecute = false, WorkingDirectory = Paths.Root })!;
+                                    var so = pr.StandardOutput.ReadToEndAsync(); var se = pr.StandardError.ReadToEndAsync();
+                                    if (!pr.WaitForExit(20000)) { try { pr.Kill(true); } catch { } return "[stopped after 20 seconds]"; }
+                                    var r = so.Result + se.Result; return r.Length > 4000 ? r[..4000] + "\n[cut off]" : r;
+                                });
+                                fb.Add("Output of " + a + ":\n" + (o.Trim() == "" ? "(no output)" : o)); break;
+                            }
+                        case "list": fb.Add(AiActions.List(a)); break;
+                        case "sysinfo": fb.Add(await Task.Run(AiActions.SysInfo)); break;
+                        case "desktop": fb.Add(sh.DesktopSnapshot()); break;
+                        case "stickyread": fb.Add("Sticky note: " + Cfg.Get("sticky").Replace("¶", "\n")); break;
+                        case "clipwrite": try { Clipboard.SetText(a); fb.Add("Copied to the clipboard."); } catch { fb.Add("Couldn't write the clipboard."); } break;
+                        case "clipread": if (Yes("The assistant wants to read what is on your clipboard. Allow?")) { var c = Clipboard.ContainsText() ? Clipboard.GetText() : ""; fb.Add("Clipboard: " + (c.Length > 2000 ? c[..2000] : c)); } else fb.Add("The user did not allow reading the clipboard."); break;
+                        case "search": if (Yes("The assistant wants to search your USB files for:\n\n" + a + "\n\nAllow?")) fb.Add(await Task.Run(() => AiActions.Search(a))); else fb.Add("The user did not allow searching."); break;
+                        default: muts.Add((k, a)); break;
                     }
                 }
                 catch (Exception ex) { fb.Add("That action failed: " + ex.Message); }
             }
-            return (Run(Act.Replace(reply, me => me.Groups[1].Value.ToLowerInvariant() is "read" or "run" ? "" : me.Value)), string.Join("\n\n", fb));
+            if (muts.Count > 0)
+            {
+                bool trust = Cfg.Get("ai_trust", "0") == "1";
+                bool need = muts.Any(x => x.k is "eject" or "lock" or "sleep" || (!trust && x.k is "move" or "copy" or "rename" or "delete"));
+                if (need && MessageBox.Show("The assistant wants to:\n\n" + string.Join("\n", muts.Select(x => "• " + AiActions.Describe(x.k, x.a))) + "\n\nAllow? (File changes can be undone with the Undo button.)", "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) fb.Add("The user did not allow those actions.");
+                else fb.AddRange(AiActions.RunAll(sh, muts).Where(x => x != ""));
+            }
+            return (Run(Act.Replace(reply, me => AiActions.Kinds.Contains(me.Groups[1].Value.ToLowerInvariant()) ? "" : me.Value)), string.Join("\n\n", fb));
         }
 
         async void Send(string text)
@@ -261,7 +285,7 @@ static class Assistant
             try
             {
                 if (model == "") { model = await Net.FirstModel(url, key); if (model == "") throw new Exception("No provider found in RelayAPI. Add one in its dashboard."); }
-                var msgs = new List<object> { new { role = "system", content = Sys() } };
+                var msgs = new List<object> { new { role = "system", content = Sys(sh.DesktopSnapshot()) } };
                 foreach (var h in hist.TakeLast(12)) msgs.Add(new { role = h["role"], content = h["content"] });
                 for (int round = 0; round < 3; round++)
                 {
@@ -289,6 +313,7 @@ static class Assistant
         bSend.Click += (_, _) => Send(tb.Text);
         tb.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { Send(tb.Text); e.SuppressKeyPress = true; } };
         bSet.Click += (_, _) => set.Visible = !set.Visible;
+        bUndo.Click += (_, _) => chat.Add(false, AiActions.Undo(sh));
         bSave.Click += (_, _) =>
         {
             Cfg.Set("ai_url", uTb.Text.Trim()); Cfg.Set("ai_key", kTb.Text.Trim()); Cfg.Set("ai_model", mTb.Text.Trim());
