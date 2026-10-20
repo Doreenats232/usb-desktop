@@ -310,23 +310,18 @@ class DesktopForm : Form
             }
             catch (Exception ex) { Toast("Couldn't move it: " + ex.Message); }
         }
-        var others = desk.Controls.OfType<DeskIcon>().Where(o => o != i).Select(o => o.Bounds).ToList();
-        bool Hit(Point p) => others.Any(r => r.IntersectsWith(new Rectangle(p, i.Size)));
-        if (Hit(i.Location))
+        int sz = Ui.D(Cfg.Int("icon", 56)), cw = sz + Ui.D(46), ch = sz + Ui.D(52), ox = Ui.D(8);
+        int rows = Math.Max(1, (desk.Height - Ui.D(10)) / ch), cols = Math.Max(1, (desk.Width - ox) / cw);
+        (int c, int r) Cell(DeskIcon o) => (Math.Clamp((int)Math.Round((o.Left - ox) / (double)cw), 0, cols - 1), Math.Clamp((int)Math.Round((o.Top - ox) / (double)ch), 0, rows - 1));
+        var occ = new HashSet<(int, int)>(desk.Controls.OfType<DeskIcon>().Where(o => o != i).Select(Cell));
+        var want = Cell(i);
+        if (occ.Contains(want))
         {
-            int sx = i.Width + Ui.D(4), sy = i.Height + Ui.D(4); var best = i.Location; bool found = false;
-            for (int ring = 1; ring < 30 && !found; ring++)
-                for (int dy = -ring; dy <= ring && !found; dy++)
-                    for (int dx = -ring; dx <= ring && !found; dx++)
-                    {
-                        if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != ring) continue;
-                        var p = new Point(i.Left + dx * sx, i.Top + dy * sy);
-                        if (p.X < 0 || p.Y < 0 || p.X + i.Width > desk.Width || p.Y + i.Height > desk.Height) continue;
-                        if (!Hit(p)) { best = p; found = true; }
-                    }
-            i.Location = best;
+            double bd = double.MaxValue; var best = want;
+            for (int c = 0; c < cols; c++) for (int r = 0; r < rows; r++) { if (occ.Contains((c, r))) continue; double d = (c - want.c) * (c - want.c) + (r - want.r) * (r - want.r); if (d < bd) { bd = d; best = (c, r); } }
+            want = best;
         }
-        Cfg.Set("pos_" + i.Label, i.Left + "," + i.Top);
+        i.Location = new Point(ox + want.c * cw, ox + want.r * ch); Cfg.Set("gpos_" + i.Label, want.c + "," + want.r);
     }
 
     public void Reload()
@@ -337,12 +332,21 @@ class DesktopForm : Form
         var list = new List<DeskIcon>();
         foreach (var k in OnDesk) { var a = Catalog.First(x => x.K == k); var key = k; list.Add(MakeIcon(k == "files" ? "This PC" : a.N, Icons.App(IconKey(k)), () => Launch(key), null)); }
         foreach (var e in Directory.GetFileSystemEntries(Paths.Desktop).OrderByDescending(Directory.Exists).ThenBy(x => x)) { var p = e; list.Add(p.EndsWith(".webapp", StringComparison.OrdinalIgnoreCase) ? MakeIcon(Path.GetFileNameWithoutExtension(p), Icons.App("web"), () => OpenFile(p), p) : MakeIcon(Path.GetFileName(p), U.IconFor(p), () => OpenFile(p), p)); }
-        int rows = Math.Max(1, (desk.Height - Ui.D(10)) / ch), n = 0;
+        int ox = Ui.D(8), rows = Math.Max(1, (desk.Height - Ui.D(10)) / ch), cols = Math.Max(1, (desk.Width - ox) / cw);
+        var occ = new HashSet<(int, int)>(); var pending = new List<DeskIcon>();
+        void Put(DeskIcon ic, int c, int r) { occ.Add((c, r)); ic.Bounds = new Rectangle(ox + c * cw, ox + r * ch, cw, ch); desk.Controls.Add(ic); ic.SendToBack(); }
         foreach (var ic in list)
         {
-            var sp = Cfg.Get("pos_" + ic.Label); var pt = new Point(Ui.D(8) + n / rows * cw, Ui.D(8) + n % rows * ch); n++;
-            var q = sp.Split(','); if (q.Length == 2 && int.TryParse(q[0], out var px) && int.TryParse(q[1], out var py)) pt = new Point(Math.Min(px, Math.Max(0, desk.Width - cw)), Math.Min(py, Math.Max(0, desk.Height - ch)));
-            ic.Bounds = new Rectangle(pt, new Size(cw, ch)); desk.Controls.Add(ic); ic.SendToBack();
+            int c = -1, r = -1; var gp = Cfg.Get("gpos_" + ic.Label).Split(',');
+            if (gp.Length == 2 && int.TryParse(gp[0], out var gc) && int.TryParse(gp[1], out var gr)) { c = gc; r = gr; }
+            else { var sp = Cfg.Get("pos_" + ic.Label).Split(','); if (sp.Length == 2 && int.TryParse(sp[0], out var px) && int.TryParse(sp[1], out var py)) { c = (int)Math.Round((px - ox) / (double)cw); r = (int)Math.Round((py - ox) / (double)ch); } }
+            if (c >= 0 && r >= 0 && c < cols && r < rows && !occ.Contains((c, r))) Put(ic, c, r); else pending.Add(ic);
+        }
+        foreach (var ic in pending)
+        {
+            bool placed = false;
+            for (int c = 0; c < cols && !placed; c++) for (int r = 0; r < rows && !placed; r++) if (!occ.Contains((c, r))) { Put(ic, c, r); placed = true; }
+            if (!placed) Put(ic, Math.Max(0, cols - 1), Math.Max(0, rows - 1));
         }
     }
 
