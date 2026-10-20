@@ -108,6 +108,7 @@ static class Assistant
             "[[remember:a short fact about the user]] saves something to remember for next time; " +
             "paths below are relative to the USB root: [[list:Desktop]] lists a folder; [[search:word]] searches file names and text; [[sysinfo:]] gives OS, RAM, USB space, battery and Wi-Fi; [[desktop:]] shows icons, windows and the sticky note; " +
             "[[sticky:new text]] replaces the sticky note and [[stickyread:]] reads it; [[mkdir:Desktop/New]]; [[move:Desktop/a.txt|Desktop/Folder]]; [[copy:src|dst]]; [[rename:Desktop/a.txt|b.txt]]; [[delete:Desktop/a.txt]] (goes to the Recycle Bin); " +
+            "[[schedule:startup|open:notepad]], [[schedule:daily 07:30|remind:text]] or [[schedule:every 30|remind:text]] (every N minutes, 5 or more) create a task (allowed actions: open:APP, web:URL, note:Title|text, sticky:text, remind:text, arrange:), [[tasks:]] lists them, [[unschedule:id or words]] removes one, tasks only run while USB Desktop is open; " +
             "[[arrange:]] tidies desktop icons; [[undo:]] undoes the last change; [[clipread:]] and [[clipwrite:text]] use the clipboard; [[eject:]] safely ejects this USB; [[lock:]] locks the PC; [[sleep:]] sleeps the PC. " +
             "Right now: " + snap.Replace("\n", " | ") + ". " +
             "Only use a tag when it helps or the user asks. Never mention these tags in your words. Keep replies short because they may be read out loud.";
@@ -137,7 +138,7 @@ static class Assistant
         var btns = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, BackColor = Color.Transparent, Padding = new Padding(0, Ui.D(16), Ui.D(8), 0) };
         RoundButton TB(string t, int w) { var b = new RoundButton { Text = t, Pill = true, BackColor = Ui.Line, ForeColor = Ui.Text, Width = Ui.D(w), Height = Ui.D(32), Font = Ui.F(9), Margin = new Padding(Ui.D(4), 0, 0, 0) }; btns.Controls.Add(b); return b; }
         head.Controls.Add(orb); head.Controls.Add(title); head.Controls.Add(sub); head.Controls.Add(btns);
-        var bSet = TB("Settings", 82); var bClr = TB("Clear", 64); var bVoice = TB(Cfg.Get("ai_speak", "0") == "1" ? "Voice: On" : "Voice: Off", 92); var bTalk = TB("Talk", 76); var bUndo = TB("Undo", 64);
+        var bSet = TB("Settings", 82); var bClr = TB("Clear", 64); var bVoice = TB(Cfg.Get("ai_speak", "0") == "1" ? "Voice: On" : "Voice: Off", 92); var bTalk = TB("Talk", 76); var bUndo = TB("Undo", 64); var bTasks = TB("Tasks", 70);
 
         // settings
         var set = new Panel { Dock = DockStyle.Top, Height = Ui.D(350), BackColor = Ui.Surface2, Visible = false, Padding = new Padding(Ui.D(14), Ui.D(4), Ui.D(14), Ui.D(8)) };
@@ -255,6 +256,8 @@ static class Assistant
                         case "list": fb.Add(AiActions.List(a)); break;
                         case "sysinfo": fb.Add(await Task.Run(AiActions.SysInfo)); break;
                         case "desktop": fb.Add(sh.DesktopSnapshot()); break;
+                        case "tasks": fb.Add(Sched.ListText()); break;
+                        case "unschedule": fb.Add(Sched.Remove(a)); break;
                         case "stickyread": fb.Add("Sticky note: " + Cfg.Get("sticky").Replace("¶", "\n")); break;
                         case "clipwrite": try { Clipboard.SetText(a); fb.Add("Copied to the clipboard."); } catch { fb.Add("Couldn't write the clipboard."); } break;
                         case "clipread": if (Yes("The assistant wants to read what is on your clipboard. Allow?")) { var c = Clipboard.ContainsText() ? Clipboard.GetText() : ""; fb.Add("Clipboard: " + (c.Length > 2000 ? c[..2000] : c)); } else fb.Add("The user did not allow reading the clipboard."); break;
@@ -267,7 +270,7 @@ static class Assistant
             if (muts.Count > 0)
             {
                 bool trust = Cfg.Get("ai_trust", "0") == "1";
-                bool need = muts.Any(x => x.k is "eject" or "lock" or "sleep" || (!trust && x.k is "move" or "copy" or "rename" or "delete"));
+                bool need = muts.Any(x => x.k is "eject" or "lock" or "sleep" or "schedule" || (!trust && x.k is "move" or "copy" or "rename" or "delete"));
                 if (need && MessageBox.Show("The assistant wants to:\n\n" + string.Join("\n", muts.Select(x => "• " + AiActions.Describe(x.k, x.a))) + "\n\nAllow? (File changes can be undone with the Undo button.)", "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) fb.Add("The user did not allow those actions.");
                 else fb.AddRange(AiActions.RunAll(sh, muts).Where(x => x != ""));
             }
@@ -313,6 +316,7 @@ static class Assistant
         bSend.Click += (_, _) => Send(tb.Text);
         tb.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { Send(tb.Text); e.SuppressKeyPress = true; } };
         bSet.Click += (_, _) => set.Visible = !set.Visible;
+        bTasks.Click += (_, _) => Sched.Manage(sh);
         bUndo.Click += (_, _) => chat.Add(false, AiActions.Undo(sh));
         bSave.Click += (_, _) =>
         {

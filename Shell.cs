@@ -190,7 +190,7 @@ class DesktopForm : Form
         Shown += async (_, _) =>
         {
             var sp = new Splash(ClientSize); Controls.Add(sp); sp.BringToFront(); Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " ");
-            await Task.Delay(400); _ = Changelog.Show(); RestoreSession(); if (Cfg.Get("companion", "1") == "1") { try { Companion.Greet(); } catch { } }
+            await Task.Delay(400); _ = Changelog.Show(); Sched.Start(this); RestoreSession(); if (Cfg.Get("companion", "1") == "1") { try { Companion.Greet(); } catch { } }
             try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { Toast("Update 1.0." + u.latest + " is available"); await Updater.Run(u.latest, u.url, true); } } catch { }
         };
     }

@@ -13,7 +13,7 @@ static class AiActions
     static string LogFile => Path.Combine(Paths.Data, "ai", "undo.json");
     static readonly char Sep = Path.DirectorySeparatorChar;
 
-    public static readonly HashSet<string> Kinds = new() { "read", "run", "list", "search", "sysinfo", "desktop", "stickyread", "sticky", "clipread", "clipwrite", "mkdir", "move", "copy", "rename", "delete", "arrange", "eject", "lock", "sleep", "undo" };
+    public static readonly HashSet<string> Kinds = new() { "read", "run", "list", "search", "sysinfo", "desktop", "stickyread", "sticky", "clipread", "clipwrite", "mkdir", "move", "copy", "rename", "delete", "arrange", "eject", "lock", "sleep", "undo", "schedule", "tasks", "unschedule" };
 
     static List<Batch> LoadLog() { try { if (File.Exists(LogFile)) return JsonSerializer.Deserialize<List<Batch>>(File.ReadAllText(LogFile)) ?? new(); } catch { } return new(); }
     static void SaveLog(List<Batch> l) { try { Directory.CreateDirectory(Path.GetDirectoryName(LogFile)!); if (l.Count > 60) l.RemoveRange(0, l.Count - 60); File.WriteAllText(LogFile, JsonSerializer.Serialize(l)); } catch { } }
@@ -47,6 +47,7 @@ static class AiActions
         "lock" => "Lock this PC",
         "sleep" => "Put this PC to sleep",
         "undo" => "Undo the last change",
+        "schedule" => "Schedule a task: " + Sched.Describe(a),
         _ => k + " " + a
     };
 
@@ -119,6 +120,7 @@ static class AiActions
             switch (k)
             {
                 case "undo": return Undo(sh);
+                case "schedule": return Sched.Add(a);
                 case "mkdir": { var p = Need(a); if (Directory.Exists(p)) return "Folder already exists: " + Rel(p); Directory.CreateDirectory(p); log.Add(new Op { Kind = "mkdir", A = p }); sh.Reload(); return "Created folder " + Rel(p); }
                 case "move": case "copy": case "rename":
                     {
