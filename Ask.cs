@@ -21,11 +21,14 @@ class AskForm : Form
             Controls.Add(ok); y += Ui.D(46) + Ui.D(10); Shown += (_, _) => tb.Focus();
         }
         else
+        {
+            int bh = opts.Length > 4 ? Ui.D(34) : Ui.D(46), gp = opts.Length > 4 ? Ui.D(6) : Ui.D(10);
             for (int i = 0; i < opts.Length; i++)
             {
-                int k = i; var b = new RoundButton { Text = opts[i], Pill = true, BackColor = i == 0 ? Theme.Accent : Color.FromArgb(52, 55, 86), ForeColor = Color.White, Bounds = new Rectangle(pad, y, iw, Ui.D(46)), Font = Ui.F(10.5f) };
-                b.Click += (_, _) => { Result = k; Close(); }; Controls.Add(b); y += Ui.D(46) + Ui.D(10);
+                int k = i; var b = new RoundButton { Text = opts[i], Pill = true, BackColor = i == 0 ? Theme.Accent : Color.FromArgb(52, 55, 86), ForeColor = Color.White, Bounds = new Rectangle(pad, y, iw, bh), Font = Ui.F(10.5f) };
+                b.Click += (_, _) => { Result = k; Close(); }; Controls.Add(b); y += bh + gp;
             }
+        }
         var cancel = new RoundButton { Text = "Cancel", Pill = true, BackColor = Color.FromArgb(0, 0, 0, 0), ForeColor = Ui.Sub, Hover = Color.FromArgb(44, 47, 76), Bounds = new Rectangle(pad, y, iw, Ui.D(38)) };
         cancel.Click += (_, _) => { Result = -1; Close(); }; Controls.Add(cancel); y += Ui.D(38) + pad;
         ClientSize = new Size(w, y);

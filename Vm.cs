@@ -273,7 +273,7 @@ static class VmApp
                 var have = Distros.Where(x => File.Exists(DiskFor(x.Id))).Select(x => x.Name).ToList();
                 card.Stage("Step 1/5 · Found on your USB:  QEMU " + (foundQ != null ? "yes" : "no") + "  ·  Linux: " + (have.Count > 0 ? string.Join(", ", have) : "none yet") + (foundIso != null ? "  ·  installer ISO yes" : ""), 6); await Task.Delay(1800);
                 card.Stage("Step 2/5 · A few quick questions…", 8);
-                int di = Ask.Choose("Choose your Linux", string.Join("\n", Distros.Select(x => x.Name + ": " + x.Note + ".")) + "\n\nOnes already on your USB are marked.", Distros.Select(x => x.Name + (File.Exists(DiskFor(x.Id)) ? "   (on your USB)" : "")).ToArray());
+                int di = Ask.Choose("Choose your Linux", "Pick the system you want. Ones already on your USB are marked.", Distros.Select(x => x.Name + (File.Exists(DiskFor(x.Id)) ? "   (on your USB)" : "")).ToArray());
                 if (di < 0) { card.Fail("Cancelled"); return; }
                 var dist = Distros[di]; Cfg.Set("vm_distro", dist.Id); pendingDistro = dist.Id;
                 bool hadDisk = File.Exists(DiskFor(dist.Id)); bool fresh = !hadDisk; bool desk = dist.Desktop && dist.Kind != "kali"; int gb = 16; string pw = "";
