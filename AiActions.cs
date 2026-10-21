@@ -14,7 +14,7 @@ static class AiActions
     static string LogFile => Path.Combine(Paths.Data, "ai", "undo.json");
     static readonly char Sep = Path.DirectorySeparatorChar;
 
-    public static readonly HashSet<string> Kinds = new() { "read", "run", "list", "search", "sysinfo", "desktop", "stickyread", "sticky", "clipread", "clipwrite", "mkdir", "move", "copy", "rename", "delete", "arrange", "eject", "lock", "sleep", "undo", "schedule", "tasks", "unschedule", "scroll", "nav", "goto", "play", "media", "click", "type", "key", "page", "pet" };
+    public static readonly HashSet<string> Kinds = new() { "read", "run", "list", "search", "sysinfo", "desktop", "stickyread", "sticky", "clipread", "clipwrite", "mkdir", "move", "copy", "rename", "delete", "arrange", "eject", "lock", "sleep", "undo", "schedule", "tasks", "unschedule", "scroll", "nav", "goto", "play", "media", "click", "type", "key", "page", "pet", "push", "outfit" };
 
     static List<Batch> LoadLog() { try { if (File.Exists(LogFile)) return JsonSerializer.Deserialize<List<Batch>>(File.ReadAllText(LogFile)) ?? new(); } catch { } return new(); }
     static void SaveLog(List<Batch> l) { try { Directory.CreateDirectory(Path.GetDirectoryName(LogFile)!); if (l.Count > 60) l.RemoveRange(0, l.Count - 60); File.WriteAllText(LogFile, JsonSerializer.Serialize(l)); } catch { } }
@@ -162,6 +162,7 @@ static class AiActions
                         log.Add(new Op { Kind = "delete", A = p, B = entry ?? "" }); sh.Reload(); return "Moved to Recycle Bin: " + Rel(p);
                     }
                 case "sticky": { var old = Cfg.Get("sticky"); Cfg.Set("sticky", a.Replace("\\n", "¶").Replace("\r", "").Replace("\n", "¶")); sh.ApplyWidgets(); log.Add(new Op { Kind = "sticky", A = old }); return "Sticky note updated."; }
+                case "push": { var old = sh.IconSnapshot(); var r = Pet.Push(sh, a); if (!r.StartsWith("ERR") && !r.StartsWith("It")) log.Add(new Op { Kind = "arrange", A = old }); return r; }
                 case "arrange": { var old = sh.ArrangeIcons(); log.Add(new Op { Kind = "arrange", A = old }); return "Desktop icons tidied."; }
                 case "eject":
                     {

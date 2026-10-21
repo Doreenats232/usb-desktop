@@ -339,9 +339,43 @@ class DesktopForm : Form
         var t = "Desktop icons: " + icons + "\nOpen windows: " + (open == "" ? "none" : open) + "\nSticky note: " + (note == "" ? "(empty)" : note);
         return t.Length > 1500 ? t[..1500] : t;
     }
+    public string IconSnapshot() => string.Join("¦", desk.Controls.OfType<DeskIcon>().Select(i => i.Label + "§" + Cfg.Get("gpos_" + i.Label) + "§" + Cfg.Get("pos_" + i.Label)));
+
+    (int cw, int ch, int ox, int rows, int cols) GridInfo()
+    {
+        int sz = Ui.D(Cfg.Int("icon", 56)), cw = sz + Ui.D(46), ch = sz + Ui.D(52), ox = Ui.D(8);
+        return (cw, ch, ox, Math.Max(1, (desk.Height - Ui.D(10)) / ch), Math.Max(1, (desk.Width - ox) / cw));
+    }
+
+    public (DeskIcon? icon, Point dest, string err) PlanPush(string name, string spec)
+    {
+        name = name.Trim(); var icons = desk.Controls.OfType<DeskIcon>().ToList();
+        var ic = icons.FirstOrDefault(i => string.Equals(i.Label, name, StringComparison.OrdinalIgnoreCase)) ?? icons.FirstOrDefault(i => i.Label.Contains(name, StringComparison.OrdinalIgnoreCase));
+        if (ic == null) return (null, default, "I can't find an icon called " + name + ".");
+        var (cw, ch, ox, rows, cols) = GridInfo();
+        (int c, int r) Cell(DeskIcon o) => (Math.Clamp((int)Math.Round((o.Left - ox) / (double)cw), 0, cols - 1), Math.Clamp((int)Math.Round((o.Top - ox) / (double)ch), 0, rows - 1));
+        var cur = Cell(ic); var occ = new HashSet<(int, int)>(icons.Where(o => o != ic).Select(Cell)); var want = cur; var sp = spec.Trim().ToLowerInvariant();
+        var m = System.Text.RegularExpressions.Regex.Match(sp, @"^(left|right|up|down)\s*(\d+)?$");
+        if (sp is "topleft" or "top left") want = (0, 0); else if (sp is "topright" or "top right") want = (cols - 1, 0);
+        else if (sp is "bottomleft" or "bottom left") want = (0, rows - 1); else if (sp is "bottomright" or "bottom right") want = (cols - 1, rows - 1);
+        else if (sp is "center" or "middle") want = (cols / 2, rows / 2); else if (sp == "top") want = (cur.c, 0); else if (sp == "bottom") want = (cur.c, rows - 1);
+        else if (m.Success) { int n = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 1; want = m.Groups[1].Value switch { "left" => (cur.c - n, cur.r), "right" => (cur.c + n, cur.r), "up" => (cur.c, cur.r - n), _ => (cur.c, cur.r + n) }; }
+        else { var p = sp.Split(','); if (p.Length == 2 && int.TryParse(p[0].Trim(), out var pc) && int.TryParse(p[1].Trim(), out var pr)) want = (pc, pr); else return (null, default, "I didn't understand where to push it: " + spec); }
+        want = (Math.Clamp(want.c, 0, cols - 1), Math.Clamp(want.r, 0, rows - 1));
+        if (occ.Contains(want)) { double bd = double.MaxValue; var best = want; for (int c = 0; c < cols; c++) for (int r = 0; r < rows; r++) { if (occ.Contains((c, r))) continue; double d = (c - want.c) * (c - want.c) + (r - want.r) * (r - want.r); if (d < bd) { bd = d; best = (c, r); } } want = best; }
+        var dest = new Point(ox + want.c * cw, ox + want.r * ch); if (dest == ic.Location) return (null, default, "It's already there.");
+        return (ic, dest, "");
+    }
+
+    public void FinishPush(DeskIcon ic, Point dest)
+    {
+        var (cw, ch, ox, rows, cols) = GridInfo(); ic.Location = dest;
+        Cfg.Set("gpos_" + ic.Label, Math.Clamp((int)Math.Round((dest.X - ox) / (double)cw), 0, cols - 1) + "," + Math.Clamp((int)Math.Round((dest.Y - ox) / (double)ch), 0, rows - 1));
+    }
+
     public string ArrangeIcons()
     {
-        var icons = desk.Controls.OfType<DeskIcon>().ToList(); var old = string.Join("¦", icons.Select(i => i.Label + "§" + Cfg.Get("gpos_" + i.Label) + "§" + Cfg.Get("pos_" + i.Label)));
+        var icons = desk.Controls.OfType<DeskIcon>().ToList(); var old = IconSnapshot();
         foreach (var i in icons) { Cfg.Set("gpos_" + i.Label, ""); Cfg.Set("pos_" + i.Label, ""); }
         Reload(); return old;
     }

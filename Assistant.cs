@@ -110,7 +110,7 @@ static class Assistant
             "[[sticky:new text]] replaces the sticky note and [[stickyread:]] reads it; [[mkdir:Desktop/New]]; [[move:Desktop/a.txt|Desktop/Folder]]; [[copy:src|dst]]; [[rename:Desktop/a.txt|b.txt]]; [[delete:Desktop/a.txt]] (goes to the Recycle Bin); " +
             "[[schedule:startup|open:notepad]], [[schedule:daily 07:30|remind:text]] or [[schedule:every 30|remind:text]] (every N minutes, 5 or more) create a task (allowed actions: open:APP, web:URL, note:Title|text, sticky:text, remind:text, arrange:), [[tasks:]] lists them, [[unschedule:id or words]] removes one, tasks only run while USB Desktop is open; " +
             "these control the Browser window: [[scroll:down|up|top|bottom]], [[nav:back|forward|reload]], [[goto:address or search words]], [[play:song or video name]] searches YouTube and plays the first result, [[media:play|pause|toggle|mute|unmute|next|fullscreen]], [[page:]] reads the page title, text and clickable items, [[click:text of a button or link]], [[type:box name|text to type]], [[key:enter]] presses Enter; open a Browser first with [[web:...]] if none is open; " +
-            "[[pet:on|off|come]] shows or hides your walking character or calls it over; [[arrange:]] tidies desktop icons; [[undo:]] undoes the last change; [[clipread:]] and [[clipwrite:text]] use the clipboard; [[eject:]] safely ejects this USB; [[lock:]] locks the PC; [[sleep:]] sleeps the PC. " +
+            "[[pet:on|off|come]] shows or hides your walking character or calls it over; [[outfit:name]] changes its clothes (hoodie, school, hero, winter, formal, sporty, royal, pajamas, summer, random); [[push:Icon name|topright]] makes the character physically push a desktop icon (places: topleft, topright, bottomleft, bottomright, center, top, bottom, left N, right N, up N, down N, or col,row);  [[arrange:]] tidies desktop icons; [[undo:]] undoes the last change; [[clipread:]] and [[clipwrite:text]] use the clipboard; [[eject:]] safely ejects this USB; [[lock:]] locks the PC; [[sleep:]] sleeps the PC. " +
             "Right now: " + snap.Replace("\n", " | ") + ". " +
             "Only use a tag when it helps or the user asks. Never mention these tags in your words. Keep replies short because they may be read out loud.";
     }
@@ -223,6 +223,7 @@ static class Assistant
                     case "desktop": fb.Add(sh.DesktopSnapshot()); break;
                     case "tasks": fb.Add(Sched.ListText()); break;
                     case "pet": Pet.Command(a); break;
+                    case "outfit": { var orr = Pet.SetOutfit(a); if (orr != "") fb.Add(orr); break; }
                     case "scroll": case "nav": case "goto": case "play": case "media": case "click": case "type": case "key": case "page": { var br = await BrowserCtl.Do(sh, k, a, trustB, Yes); if (br != "") fb.Add(br); break; }
                     case "unschedule": fb.Add(Sched.Remove(a)); break;
                     case "stickyread": fb.Add("Sticky note: " + Cfg.Get("sticky").Replace("¶", "\n")); break;
