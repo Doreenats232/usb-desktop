@@ -9,12 +9,12 @@ class Outfit
     public string Hat = ""; public bool Glasses, Sun, Cape, Mask, Scarf, Tie, Pack, Shorts, Phones;
 }
 
-class PetSprite : Control
+class PetSprite
 {
+    public int Width = 150, Height = 170;
     public bool Right = true, Moving, Talking; public int Push; public Outfit Fit = Pet.Outfits[0];
     float phase, dustT; DateTime nextBlink = DateTime.Now.AddSeconds(2), blinkEnd; static readonly Random R = new();
     class Puff { public float X, Y, Age; } readonly List<Puff> dust = new();
-    public PetSprite() { SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true); BackColor = Color.Transparent; Cursor = Cursors.Hand; Visible = false; }
     public void Step(float dt)
     {
         if (Moving) phase += dt * (Push > 0 ? 6f : 9f); var now = DateTime.Now; if (now >= nextBlink) { blinkEnd = now.AddMilliseconds(140); nextBlink = now.AddSeconds(2 + R.NextDouble() * 3); }
@@ -31,9 +31,9 @@ class PetSprite : Control
         using var p = new Pen(c, w) { StartCap = LineCap.Round, EndCap = LineCap.Round }; g.DrawLine(p, x, y, ex, ey);
         if (tip != null) { using var b = new SolidBrush(tip.Value); g.FillEllipse(b, ex - tr, ey - tr * 0.7f, tr * 2.3f, tr * 1.4f); }
     }
-    protected override void OnPaint(PaintEventArgs e)
+    public void Draw(Graphics g)
     {
-        var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias; float s = Math.Min(Width / 110f, Height / 195f); float t = Environment.TickCount / 1000f; var f = Fit;
+        g.SmoothingMode = SmoothingMode.AntiAlias; float s = Math.Min(Width / 110f, Height / 195f); float t = Environment.TickCount / 1000f; var f = Fit;
         foreach (var d in dust) { using var b = new SolidBrush(Color.FromArgb((int)(120 * (1 - d.Age)), 215, 205, 195)); float r = (6 + d.Age * 16) * s; g.FillEllipse(b, d.X - r, d.Y - r * 0.6f, r * 2, r * 1.2f); }
         g.TranslateTransform(Width / 2f, Height - 8 * s); if (!Right && Push < 2) g.ScaleTransform(-1, 1); g.ScaleTransform(s, s);
         float sw = Moving ? MathF.Sin(phase) : 0f, bob = Moving ? -MathF.Abs(MathF.Cos(phase)) * (Push > 0 ? 2f : 4f) : MathF.Sin(t * 2f) * -1.5f;
@@ -78,32 +78,39 @@ class PetSprite : Control
     }
 }
 
-class PetBubble : Control
+class PetWin : Form
 {
-    string text = ""; int tail; readonly Font f = Ui.F(10);
-    public PetBubble() { SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true); BackColor = Color.White; Visible = false; }
-    public void SetText(string t)
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 1)] struct BLEND { public byte Op, Flags, Alpha, Format; }
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)] static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref Point pptDst, ref Size psize, IntPtr hdcSrc, ref Point pprSrc, int crKey, ref BLEND pblend, int dwFlags);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr hWnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr hDC);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr hdc);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr hDC, IntPtr hObject);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr hObject);
+    public PetWin() { FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual; Size = new Size(10, 10); }
+    protected override CreateParams CreateParams { get { var cp = base.CreateParams; cp.ExStyle |= 0x80000 | 0x80 | 0x08000000; return cp; } }   // layered, tool window, no-activate
+    protected override bool ShowWithoutActivation => true;
+    // draws a 32-bit bitmap with real per-pixel transparency: see-through everywhere the picture is empty, and clicks pass through those parts
+    public void Present(Bitmap bmp, Point loc)
     {
-        if (t.Length > 260) t = t[..260] + "…"; text = t; int pad = Ui.D(12); tail = Ui.D(10);
-        var sz = TextRenderer.MeasureText(t, f, new Size(Ui.D(240), 0), TextFormatFlags.WordBreak | TextFormatFlags.NoPadding);
-        Size = new Size(Math.Max(Ui.D(46), sz.Width + pad * 2 + 2), sz.Height + pad * 2 + tail);
-        using var rp = U.Round(new Rectangle(0, 0, Width, Height - tail), Ui.D(14)); var rg = new Region(rp);
-        using var tp = new GraphicsPath(); tp.AddPolygon(new[] { new Point(Width / 2 - Ui.D(8), Height - tail - 1), new Point(Width / 2, Height), new Point(Width / 2 + Ui.D(8), Height - tail - 1) }); rg.Union(tp);
-        Region = rg; Invalidate();
-    }
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        e.Graphics.Clear(Color.White);
-        TextRenderer.DrawText(e.Graphics, text, f, new Rectangle(Ui.D(12), Ui.D(12), Math.Max(10, Width - Ui.D(24)), Math.Max(10, Height - tail - Ui.D(24))), Color.FromArgb(30, 30, 44), TextFormatFlags.WordBreak | TextFormatFlags.NoPadding);
+        if (!IsHandleCreated) return; IntPtr screen = GetDC(IntPtr.Zero), mem = CreateCompatibleDC(screen), hb = IntPtr.Zero, old = IntPtr.Zero;
+        try
+        {
+            hb = bmp.GetHbitmap(Color.FromArgb(0)); old = SelectObject(mem, hb); var size = new Size(bmp.Width, bmp.Height); var src = new Point(0, 0); var dst = loc; var bf = new BLEND { Op = 0, Alpha = 255, Format = 1 };
+            UpdateLayeredWindow(Handle, screen, ref dst, ref size, mem, ref src, 0, ref bf, 2);
+        }
+        finally { ReleaseDC(IntPtr.Zero, screen); if (hb != IntPtr.Zero) { SelectObject(mem, old); DeleteObject(hb); } DeleteDC(mem); }
     }
 }
 
 static class Pet
 {
-    static DesktopForm? sh; static Panel? desk; static PetSprite? sp; static PetBubble? bu; static Control? bar; static TextBox? tb;
-    static readonly Random rnd = new(); static System.Windows.Forms.Timer? tm;
-    static DateTime last = DateTime.Now, idleUntil = DateTime.Now.AddSeconds(2), pausedUntil, hideBubbleAt = DateTime.MaxValue, barUntil, nextFix;
-    static PointF pos; static PointF? target; static bool busy, speaking, dragging, down; static int speechId; static Point dn, startLoc;
+    static DesktopForm? sh; static Panel? desk; static PetSprite? sp; static PetWin? win; static Control? bar; static TextBox? tb; static Bitmap? bmp;
+    static readonly Random rnd = new(); static System.Windows.Forms.Timer? tm; static readonly Font bf = Ui.F(10.5f);
+    static DateTime last = DateTime.Now, idleUntil = DateTime.Now.AddSeconds(2), pausedUntil, hideBubbleAt = DateTime.MinValue, barUntil;
+    static PointF pos; static PointF? target; static bool busy, speaking, dragging, down, bubbleOn, bubbleTrunc; static int speechId; static Point dn; static PointF startPos;
+    static string bubbleText = ""; static Rectangle bubbleRect;
 
     public static readonly Outfit[] Outfits =
     {
@@ -140,7 +147,7 @@ static class Pet
         var p0 = icon.Location; var way = new List<Point>(); bool hf = Math.Abs(dest.X - p0.X) >= Math.Abs(dest.Y - p0.Y);
         var mid = hf ? new Point(dest.X, p0.Y) : new Point(p0.X, dest.Y); if (mid != p0) way.Add(mid); if (dest != mid) way.Add(dest);
         job = new PushJob { Icon = icon, IconPos = p0, Way = way, Dest = dest };
-        return sp.Visible ? "The character is pushing " + icon.Label + " now." : "Queued: close or minimize the chat window to watch the character push " + icon.Label + ".";
+        return win!.Visible ? "The character is pushing " + icon.Label + " now." : "Queued: close or minimize the chat window to watch the character push " + icon.Label + ".";
     }
 
     static PointF ApproachPos(Rectangle r, int pose, int sign)
@@ -185,22 +192,29 @@ static class Pet
     public static void Attach(DesktopForm s, Panel d)
     {
         if (sp != null) return; sh = s; desk = d;
-        sp = new PetSprite { Width = Ui.D(150), Height = Ui.D(170) }; sp.Fit = Outfits.FirstOrDefault(o => o.Name == Cfg.Get("pet_outfit", "hoodie")) ?? Outfits[0]; bu = new PetBubble();
-        var (box, t) = Ui.Input("Talk to " + Cfg.Get("ai_name", "Morales") + "…", false, 38); bar = box; tb = t; bar.Width = Ui.D(260); bar.Height = Ui.D(38); bar.Visible = false;
-        d.Controls.Add(bar); d.Controls.Add(bu); d.Controls.Add(sp);
-        pos = new PointF(Ui.D(320), Math.Max(Ui.D(60), d.Height - sp.Height - Ui.D(140))); sp.Location = Point.Round(pos);
-        var menu = new ContextMenuStrip(); menu.Items.Add("Talk to me", null, (_, _) => ToggleBar()); var cm = new ToolStripMenuItem("Change clothes"); foreach (var o in Outfits) { var n = o.Name; cm.DropDownItems.Add(char.ToUpper(n[0]) + n[1..], null, (_, _) => SetOutfit(n)); } menu.Items.Add(cm); menu.Items.Add("Hide the character", null, (_, _) => Cfg.Set("pet", "0")); sp.ContextMenuStrip = menu;
-        sp.MouseDown += (_, e) => { if (e.Button != MouseButtons.Left) return; down = true; dragging = false; dn = Cursor.Position; startLoc = sp.Location; };
-        sp.MouseMove += (_, e) =>
+        sp = new PetSprite { Width = Ui.D(150), Height = Ui.D(170) }; sp.Fit = Outfits.FirstOrDefault(o => o.Name == Cfg.Get("pet_outfit", "hoodie")) ?? Outfits[0];
+        win = new PetWin(); win.CreateControl(); var _h = win.Handle;
+        var (box, t) = Ui.Input("Talk to " + Cfg.Get("ai_name", "Morales") + "…", false, 38); bar = box; tb = t; bar.Width = Ui.D(260); bar.Height = Ui.D(38); bar.Visible = false; d.Controls.Add(bar);
+        pos = new PointF(Ui.D(320), Math.Max(Ui.D(60), d.Height - sp.Height - Ui.D(140)));
+        var menu = new ContextMenuStrip(); menu.Items.Add("Talk to me", null, (_, _) => ToggleBar());
+        var cm = new ToolStripMenuItem("Change clothes"); foreach (var o in Outfits) { var n = o.Name; cm.DropDownItems.Add(char.ToUpper(n[0]) + n[1..], null, (_, _) => SetOutfit(n)); }
+        menu.Items.Add(cm); menu.Items.Add("Hide the character", null, (_, _) => Cfg.Set("pet", "0")); win.ContextMenuStrip = menu;
+        win.MouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left) return;
+            if (bubbleOn && bubbleRect.Contains(e.Location)) { if (bubbleTrunc && sh != null) { sh.Launch("ai"); } bubbleOn = false; return; }
+            down = true; dragging = false; dn = Cursor.Position; startPos = pos;
+        };
+        win.MouseMove += (_, e) =>
         {
             if (!down) return; var c = Cursor.Position; int dx = c.X - dn.X, dy = c.Y - dn.Y;
             if (!dragging && Math.Abs(dx) + Math.Abs(dy) > 6) { dragging = true; target = null; }
-            if (dragging) pos = Clamp(new PointF(startLoc.X + dx, startLoc.Y + dy));
+            if (dragging) pos = Clamp(new PointF(startPos.X + dx, startPos.Y + dy));
         };
-        sp.MouseUp += (_, e) => { if (e.Button != MouseButtons.Left) return; bool was = dragging; down = false; dragging = false; pausedUntil = DateTime.Now.AddSeconds(5); if (!was) ToggleBar(); };
+        win.MouseUp += (_, e) => { if (e.Button != MouseButtons.Left || !down) return; bool was = dragging; down = false; dragging = false; pausedUntil = DateTime.Now.AddSeconds(5); if (!was) ToggleBar(); };
         tb.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { Ask(tb.Text); e.SuppressKeyPress = true; } else if (e.KeyCode == Keys.Escape) { bar!.Visible = false; e.SuppressKeyPress = true; } };
         tb.TextChanged += (_, _) => barUntil = DateTime.Now.AddSeconds(15);
-        Assistant.Replied += (text, fromPet) => { if (!fromPet && sp != null && sp.Visible) ShowBubble(text, Math.Max(5, text.Length * 0.06)); };
+        Assistant.Replied += (text, fromPet) => { if (!fromPet && win != null && win.Visible) ShowBubble(text, BubbleSecs(text)); };
         tm = new System.Windows.Forms.Timer { Interval = 40 }; tm.Tick += (_, _) => Tick(); tm.Start();
     }
 
@@ -212,54 +226,91 @@ static class Pet
     }
 
     static PointF Clamp(PointF p) => desk == null || sp == null ? p : new PointF(Math.Clamp(p.X, 0, Math.Max(0, desk.Width - sp.Width)), Math.Clamp(p.Y, Ui.D(20), Math.Max(Ui.D(20), desk.Height - sp.Height - Ui.D(54))));
+    static double BubbleSecs(string t) => Math.Clamp(10 + t.Length * 0.1, 12, 90);
 
     static void Tick()
     {
-        if (sh == null || desk == null || sp == null || bu == null || bar == null || tb == null) return;
+        if (sh == null || desk == null || sp == null || win == null || bar == null || tb == null) return;
         var now = DateTime.Now; float dt = Math.Min(0.2f, (float)(now - last).TotalSeconds); last = now;
-        bool show = Cfg.Get("pet", "1") == "1" && desk.Visible && !sh.AssistantOpen();
-        if (!show) { if (sp.Visible) { sp.Visible = false; bu.Visible = false; bar.Visible = false; } return; }
-        if (!sp.Visible) { sp.Visible = true; pos = Clamp(pos); }
-        if (now >= nextFix) { nextFix = now.AddSeconds(1.5); Fix(); }
-        if (job != null) { RunJob(dt, now); sp.Location = Point.Round(pos); sp.Step(dt); sp.Invalidate(); Place(); return; }
-        bool still = dragging || speaking || busy || bar.Visible || now < pausedUntil;
-        if (still) { sp.Moving = false; if (!dragging) target = null; }
-        else if (target == null) { sp.Moving = false; if (now >= idleUntil) { var a = rnd.NextDouble() * Math.PI * 2; float r = Ui.D(150) + (float)rnd.NextDouble() * Ui.D(300); target = Clamp(new PointF(pos.X + MathF.Cos((float)a) * r, pos.Y + MathF.Sin((float)a) * r * 0.6f)); } }
+        bool show = Cfg.Get("pet", "1") == "1" && desk.Visible && sh.Visible && sh.WindowState != FormWindowState.Minimized && !sh.AssistantOpen();
+        if (!show) { if (win.Visible) { win.Hide(); bar.Visible = false; } return; }
+        if (!win.Visible) { win.Show(sh); pos = Clamp(pos); }
+        if (job != null) { RunJob(dt, now); }
         else
         {
-            float dx = target.Value.X - pos.X, dy = target.Value.Y - pos.Y, dist = MathF.Sqrt(dx * dx + dy * dy);
-            if (dist < 4) { target = null; idleUntil = now.AddSeconds(2.5 + rnd.NextDouble() * 5); sp.Moving = false; }
-            else { float st = Math.Min(dist, Ui.D(70) * dt); pos = new PointF(pos.X + dx / dist * st, pos.Y + dy / dist * st); sp.Moving = true; if (Math.Abs(dx) > 2) sp.Right = dx > 0; }
+            bool still = dragging || speaking || busy || bar.Visible || now < pausedUntil;
+            if (still) { sp.Moving = false; if (!dragging) target = null; }
+            else if (target == null) { sp.Moving = false; if (now >= idleUntil) { var a = rnd.NextDouble() * Math.PI * 2; float r = Ui.D(150) + (float)rnd.NextDouble() * Ui.D(300); target = Clamp(new PointF(pos.X + MathF.Cos((float)a) * r, pos.Y + MathF.Sin((float)a) * r * 0.6f)); } }
+            else
+            {
+                float dx = target.Value.X - pos.X, dy = target.Value.Y - pos.Y, dist = MathF.Sqrt(dx * dx + dy * dy);
+                if (dist < 4) { target = null; idleUntil = now.AddSeconds(2.5 + rnd.NextDouble() * 5); sp.Moving = false; }
+                else { float st = Math.Min(dist, Ui.D(70) * dt); pos = new PointF(pos.X + dx / dist * st, pos.Y + dy / dist * st); sp.Moving = true; if (Math.Abs(dx) > 2) sp.Right = dx > 0; }
+            }
+            pos = Clamp(pos);
         }
-        sp.Location = Point.Round(Clamp(pos)); sp.Step(dt); sp.Invalidate(); Place();
-        if (bu.Visible && now >= hideBubbleAt && !speaking && !busy) bu.Visible = false;
-        if (bar.Visible && !busy && now > barUntil && tb.Text == "") bar.Visible = false;
+        sp.Step(dt);
+        if (bubbleOn)
+        {
+            var c = win.PointToClient(Cursor.Position); if (bubbleRect.Contains(c)) hideBubbleAt = now.AddSeconds(8);
+            if (now >= hideBubbleAt && !speaking && !busy) bubbleOn = false;
+        }
+        if (bar.Visible)
+        {
+            float s = Math.Min(sp.Width / 110f, sp.Height / 195f);
+            bar.Location = new Point(Math.Clamp((int)(pos.X + sp.Width / 2f - bar.Width / 2f), Ui.D(4), Math.Max(Ui.D(4), desk.Width - bar.Width - Ui.D(4))), (int)(pos.Y + sp.Height + Ui.D(2)));
+            if (!busy && now > barUntil && tb.Text == "") bar.Visible = false;
+        }
+        Render();
     }
 
-    // keep the character above the icons but below every window
-    static void Fix()
+    static void Render()
     {
-        if (desk == null || sp == null) return; var c = desk.Controls;
-        int maxWin = c.OfType<Win>().Select(w => c.GetChildIndex(w)).DefaultIfEmpty(-1).Max(); int minIcon = c.OfType<DeskIcon>().Select(i => c.GetChildIndex(i)).DefaultIfEmpty(int.MaxValue).Min();
-        int idx = c.GetChildIndex(sp); if (idx < maxWin || idx > minIcon) c.SetChildIndex(sp, Math.Min(maxWin + 1, c.Count - 1));
+        if (sp == null || win == null || desk == null) return;
+        int FW = Ui.D(320), AH = Ui.D(170), FH = AH + sp.Height;
+        if (bmp == null || bmp.Width != FW || bmp.Height != FH) { bmp?.Dispose(); bmp = new Bitmap(FW, FH, System.Drawing.Imaging.PixelFormat.Format32bppArgb); }
+        var loc = desk.PointToScreen(new Point((int)pos.X - (FW - sp.Width) / 2, (int)pos.Y - AH));
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.Clear(Color.Transparent); g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias; g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            var st = g.Save(); g.TranslateTransform((FW - sp.Width) / 2f, AH); sp.Draw(g); g.Restore(st);
+            DrawBubble(g, FW, AH);
+            // make it look like it is on the desktop: erase everything outside the desktop area and anything covered by an open window
+            g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+            var dr = desk.RectangleToScreen(desk.ClientRectangle); dr.Offset(-loc.X, -loc.Y);
+            using (var outside = new Region(new Rectangle(0, 0, FW, FH))) { outside.Exclude(dr); g.SetClip(outside, System.Drawing.Drawing2D.CombineMode.Replace); g.Clear(Color.Transparent); }
+            foreach (var w in desk.Controls.OfType<Win>().Where(x => x.Visible)) { var r = desk.RectangleToScreen(w.Bounds); r.Offset(-loc.X, -loc.Y); g.SetClip(r, System.Drawing.Drawing2D.CombineMode.Replace); g.Clear(Color.Transparent); }
+        }
+        win.Present(bmp, loc);
     }
 
-    static void Place()
+    static void DrawBubble(Graphics g, int FW, int AH)
     {
-        if (desk == null || sp == null || bu == null || bar == null) return;
-        if (bar.Visible) bar.Location = new Point(Math.Clamp(sp.Left + (sp.Width - bar.Width) / 2, Ui.D(4), Math.Max(Ui.D(4), desk.Width - bar.Width - Ui.D(4))), sp.Bottom + Ui.D(2));
-        if (bu.Visible) bu.Location = new Point(Math.Clamp(sp.Left + sp.Width / 2 - bu.Width / 2, Ui.D(4), Math.Max(Ui.D(4), desk.Width - bu.Width - Ui.D(4))), Math.Max(Ui.D(4), sp.Top - bu.Height + Ui.D(8)));
+        if (!bubbleOn || bubbleText == "") { bubbleRect = Rectangle.Empty; return; }
+        int pad = Ui.D(12), tail = Ui.D(10), maxW = Ui.D(260), maxH = AH - tail - Ui.D(14); var text = bubbleText;
+        var sz = g.MeasureString(text, bf, new SizeF(maxW, 5000)); float tw = Math.Min(maxW, (float)Math.Ceiling(sz.Width)), th = Math.Min(maxH - pad * 2, (float)Math.Ceiling(sz.Height)); bubbleTrunc = sz.Height > th + 2 || text.EndsWith("…");
+        int w = (int)tw + pad * 2 + 2, h = (int)th + pad * 2; int x = Math.Clamp(FW / 2 - w / 2, Ui.D(4), FW - w - Ui.D(4)), y = AH - tail - Ui.D(6) - h; if (y < 0) y = 0;
+        bubbleRect = new Rectangle(x, y, w, h + tail);
+        var rect = new Rectangle(x, y, w, h);
+        using (var path = U.Round(rect, Ui.D(14)))
+        {
+            using (var sb = new SolidBrush(Color.FromArgb(55, 0, 0, 0))) { var r2 = rect; r2.Offset(2, 3); using var p2 = U.Round(r2, Ui.D(14)); g.FillPath(sb, p2); }
+            using var wb = new SolidBrush(Color.White); g.FillPath(wb, path);
+            int cx = Math.Clamp(FW / 2, x + Ui.D(18), x + w - Ui.D(18)); g.FillPolygon(wb, new[] { new Point(cx - Ui.D(8), y + h - 1), new Point(cx + Ui.D(6), y + h + tail), new Point(cx + Ui.D(8), y + h - 1) });
+        }
+        using var tbru = new SolidBrush(Color.FromArgb(30, 30, 44)); using var sf = new StringFormat { Trimming = StringTrimming.EllipsisWord };
+        g.DrawString(text + (bubbleTrunc ? "\n(click to read more)" : ""), bf, tbru, new RectangleF(x + pad, y + pad, tw + 2, th), sf);
     }
 
     static void ToggleBar()
     {
         if (bar == null || tb == null) return; if (bar.Visible) { bar.Visible = false; return; }
-        bar.Visible = true; Place(); bar.BringToFront(); tb.Focus(); barUntil = DateTime.Now.AddSeconds(15);
+        bar.Visible = true; bar.BringToFront(); tb.Focus(); barUntil = DateTime.Now.AddSeconds(15);
     }
 
     static void ShowBubble(string t, double secs)
     {
-        if (bu == null) return; bu.SetText(t); bu.Visible = true; Place(); bu.BringToFront(); hideBubbleAt = DateTime.Now.AddSeconds(secs);
+        if (t.Length > 400) t = t[..400] + "…"; bubbleText = t; bubbleOn = true; hideBubbleAt = DateTime.Now.AddSeconds(secs);
     }
 
     static async void Ask(string text)
@@ -267,14 +318,15 @@ static class Pet
         text = text.Trim(); if (text == "" || busy || sh == null || tb == null) return;
         busy = true; tb.Text = ""; ShowBubble("…", 120);
         try { var r = await Assistant.Converse(sh, text, true); Speak(r); }
-        catch (Exception ex) { ShowBubble("Hmm: " + ex.Message, 7); }
+        catch (Exception ex) { ShowBubble("Hmm: " + ex.Message, 12); }
         finally { busy = false; barUntil = DateTime.Now.AddSeconds(12); }
     }
 
     static void Speak(string text)
     {
-        ShowBubble(text, Math.Max(5, text.Length * 0.06)); if (Cfg.Get("pet_voice", "1") != "1" || sp == null) return;
+        ShowBubble(text, BubbleSecs(text)); if (Cfg.Get("pet_voice", "1") != "1" || sp == null) return;
         int id = ++speechId; speaking = true; sp.Talking = true;
-        Assistant.Say(text, () => { try { desk!.BeginInvoke(new Action(() => { if (id != speechId) return; speaking = false; if (sp != null) sp.Talking = false; hideBubbleAt = DateTime.Now.AddSeconds(2); })); } catch { } });
+        Assistant.Say(text, () => { try { desk!.BeginInvoke(new Action(() => { if (id != speechId) return; speaking = false; if (sp != null) sp.Talking = false; hideBubbleAt = DateTime.Now.AddSeconds(8); })); } catch { } },
+            err => { try { desk!.BeginInvoke(new Action(() => sh?.Toast("Voice problem: " + err))); } catch { } });
     }
 }

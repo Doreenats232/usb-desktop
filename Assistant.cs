@@ -128,15 +128,19 @@ static class Assistant
     static readonly List<Dictionary<string, string>> H = Load();
     public static event Action<string, bool>? Replied;
 
-    public static void Say(string text, Action? done = null)
+    public static event Action<bool, string>? Message;
+
+    public static void Say(string text, Action? done = null, Action<string>? onError = null)
     {
         try
         {
-            synth ??= new System.Speech.Synthesis.SpeechSynthesizer(); synth.SpeakAsyncCancelAll();
+            synth ??= new System.Speech.Synthesis.SpeechSynthesizer();
+            if (!synth.GetInstalledVoices().Any(v => v.Enabled)) throw new Exception("Windows has no speech voice installed (Settings > Time & language > Speech).");
+            synth.SetOutputToDefaultAudioDevice(); synth.Volume = 100; synth.SpeakAsyncCancelAll();
             EventHandler<System.Speech.Synthesis.SpeakCompletedEventArgs>? h = null; h = (_, _) => { synth!.SpeakCompleted -= h; done?.Invoke(); };
             synth.SpeakCompleted += h; synth.SpeakAsync(Regex.Replace(text, @"[*`#]", ""));
         }
-        catch { done?.Invoke(); }
+        catch (Exception ex) { onError?.Invoke(ex.Message); done?.Invoke(); }
     }
 
     // One full conversation turn (used by the chat window and by the walking character).
@@ -144,7 +148,7 @@ static class Assistant
     {
         string url = Cfg.Get("ai_url", DefUrl), key = Cfg.Get("ai_key"), model = Cfg.Get("ai_model");
         if (url == "" || key == "") throw new Exception("Add your RelayAPI key in the assistant's Settings first.");
-        H.Add(new() { ["role"] = "user", ["content"] = text }); string clean = "";
+        H.Add(new() { ["role"] = "user", ["content"] = text }); string clean = ""; if (fromPet) Message?.Invoke(true, text);
         try
         {
             if (model == "") { model = await Net.FirstModel(url, key); if (model == "") throw new Exception("No provider found in RelayAPI. Add one in its dashboard."); }
@@ -162,7 +166,7 @@ static class Assistant
             H.Add(new() { ["role"] = "assistant", ["content"] = clean }); Save(H);
         }
         catch { H.RemoveAt(H.Count - 1); throw; }
-        Replied?.Invoke(clean, fromPet); return clean;
+        if (fromPet) Message?.Invoke(false, clean); Replied?.Invoke(clean, fromPet); return clean;
     }
 
     static string RunTags(DesktopForm sh, string reply)
@@ -286,6 +290,8 @@ static class Assistant
         bottom.Controls.Add(box); bottom.Controls.Add(new Panel { Dock = DockStyle.Right, Width = Ui.D(8), BackColor = Color.Transparent }); bottom.Controls.Add(bSend);
         root.Controls.Add(chat); root.Controls.Add(bottom); root.Controls.Add(set); root.Controls.Add(head);
 
+        Action<bool, string> onMsg = (user, t) => { try { root.BeginInvoke(new Action(() => { if (!root.IsDisposed) chat.Add(user, t); })); } catch { } };
+        Assistant.Message += onMsg; root.Disposed += (_, _) => Assistant.Message -= onMsg;
         foreach (var h in hist.TakeLast(40)) chat.Items.Add((h["role"] == "user", h["content"]));
         if (hist.Count == 0) chat.Items.Add((false, "Hi! I can chat, open apps, save notes and talk out loud. Press Settings once and add your RelayAPI key. Press Talk to speak with me."));
         chat.ToEnd();
@@ -301,26 +307,24 @@ static class Assistant
             {
                 if (rec == null)
                 {
-                    rec = new System.Speech.Recognition.SpeechRecognitionEngine(); rec.LoadGrammar(new System.Speech.Recognition.DictationGrammar()); rec.SetInputToDefaultAudioDevice();
+                    var infos = System.Speech.Recognition.SpeechRecognitionEngine.InstalledRecognizers(); if (infos.Count == 0) throw new Exception("Windows has no speech recognizer installed. Add one in Settings > Time & language > Speech, then try again.");
+                    var info = infos.FirstOrDefault(r => r.Culture.TwoLetterISOLanguageName == "en") ?? infos[0];
+                    rec = new System.Speech.Recognition.SpeechRecognitionEngine(info); rec.LoadGrammar(new System.Speech.Recognition.DictationGrammar()); rec.SetInputToDefaultAudioDevice();
                     rec.InitialSilenceTimeout = TimeSpan.FromSeconds(10); rec.BabbleTimeout = TimeSpan.FromSeconds(6); rec.EndSilenceTimeout = TimeSpan.FromMilliseconds(900); rec.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(1300);
-                    rec.SpeechRecognized += (_, e) => { var t = e.Result.Text; if (e.Result.Confidence > 0.3 && t.Trim() != "") try { root.BeginInvoke(new Action(() => Send(t))); } catch { } };
+                    rec.SpeechRecognized += (_, e) => { var t = e.Result.Text; if (e.Result.Confidence > 0.2 && t.Trim() != "") try { root.BeginInvoke(new Action(() => { Mode(2, "Heard: " + t); Send(t); })); } catch { } };
+                    rec.SpeechRecognitionRejected += (_, _) => { try { root.BeginInvoke(new Action(() => Mode(2, "Didn't catch that, try again"))); } catch { } };
                     rec.RecognizeCompleted += (_, _) => { try { root.BeginInvoke(new Action(async () => { await Task.Delay(250); StartListen(); })); } catch { } };
                 }
                 rec.RecognizeAsync(System.Speech.Recognition.RecognizeMode.Single); Mode(2, "Listening… just talk");
             }
-            catch { talk = false; bTalk.Text = "Talk"; bTalk.BackColor = Ui.Line; Mode(0, "Online"); sh.Toast("No microphone or speech recognizer found on this PC"); }
+            catch (Exception ex) { talk = false; rec = null; bTalk.Text = "Talk"; bTalk.BackColor = Ui.Line; Mode(0, "Online"); sh.Toast("Microphone problem: " + ex.Message); }
         }
         void StopTalk() { talk = false; bTalk.Text = "Talk"; bTalk.BackColor = Ui.Line; try { rec?.RecognizeAsyncCancel(); } catch { } if (!busy && !speaking) Mode(0, "Online"); }
         void Speak(string text)
         {
-            try
-            {
-                synth ??= new System.Speech.Synthesis.SpeechSynthesizer(); synth.SpeakAsyncCancelAll(); speaking = true; Mode(3, "Speaking…");
-                EventHandler<System.Speech.Synthesis.SpeakCompletedEventArgs>? done = null;
-                done = (_, _) => { synth!.SpeakCompleted -= done; try { root.BeginInvoke(new Action(() => { speaking = false; if (talk) StartListen(); else Mode(0, "Online"); })); } catch { } };
-                synth.SpeakCompleted += done; synth.SpeakAsync(Regex.Replace(text, @"[*`#]", ""));
-            }
-            catch { speaking = false; }
+            speaking = true; Mode(3, "Speaking…");
+            Assistant.Say(text, () => { try { root.BeginInvoke(new Action(() => { speaking = false; if (talk) StartListen(); else Mode(0, "Online"); })); } catch { } },
+                err => { try { root.BeginInvoke(new Action(() => sh.Toast("Voice problem: " + err))); } catch { } });
         }
 
         async void Send(string text)
@@ -355,7 +359,7 @@ static class Assistant
             title.Text = aiName(); orb.Letter = chat.Letter = aiName()[..1].ToUpper(); orb.Invalidate(); chat.Invalidate(); set.Visible = false; sh.Toast("Assistant settings saved");
         };
         bClr.Click += (_, _) => { if (MessageBox.Show("Clear the whole chat history?", "AI Assistant", MessageBoxButtons.YesNo) != DialogResult.Yes) return; hist.Clear(); Save(hist); chat.Items.Clear(); chat.Invalidate(); };
-        bVoice.Click += (_, _) => { bool on = Cfg.Get("ai_speak", "0") != "1"; Cfg.Set("ai_speak", on ? "1" : "0"); bVoice.Text = on ? "Voice: On" : "Voice: Off"; if (!on) try { synth?.SpeakAsyncCancelAll(); } catch { } };
+        bVoice.Click += (_, _) => { bool on = Cfg.Get("ai_speak", "0") != "1"; Cfg.Set("ai_speak", on ? "1" : "0"); bVoice.Text = on ? "Voice: On" : "Voice: Off"; if (!on) { try { synth?.SpeakAsyncCancelAll(); } catch { } } else Assistant.Say("Voice is on. Can you hear me?", null, err => { try { root.BeginInvoke(new Action(() => sh.Toast("Voice problem: " + err))); } catch { } }); };
         bTalk.Click += (_, _) =>
         {
             if (talk) { StopTalk(); return; }
