@@ -373,6 +373,40 @@ class DesktopForm : Form
         Cfg.Set("gpos_" + ic.Label, Math.Clamp((int)Math.Round((dest.X - ox) / (double)cw), 0, cols - 1) + "," + Math.Clamp((int)Math.Round((dest.Y - ox) / (double)ch), 0, rows - 1));
     }
 
+    // Plans an A-Z (or Z-A) layout, filled top to bottom then left to right. Returns the moves in order; an icon sitting on a spot it needs is first parked on a free spot.
+    public (List<(DeskIcon icon, Point dest)> moves, string err) PlanSort(bool desc)
+    {
+        var none = new List<(DeskIcon icon, Point dest)>(); var icons = desk.Controls.OfType<DeskIcon>().ToList();
+        if (icons.Count == 0) return (none, "There are no icons on the desktop.");
+        var (cw, ch, ox, rows, cols) = GridInfo();
+        if (icons.Count > rows * cols) return (none, "There are too many icons to line up on this screen.");
+        (int c, int r) Cell(DeskIcon o) => (Math.Clamp((int)Math.Round((o.Left - ox) / (double)cw), 0, cols - 1), Math.Clamp((int)Math.Round((o.Top - ox) / (double)ch), 0, rows - 1));
+        Point Pt((int c, int r) q) => new Point(ox + q.c * cw, ox + q.r * ch);
+        var order = (desc ? icons.OrderByDescending(i => i.Label, StringComparer.CurrentCultureIgnoreCase) : icons.OrderBy(i => i.Label, StringComparer.CurrentCultureIgnoreCase)).ToList();
+        var at = new Dictionary<(int c, int r), DeskIcon>(); var spot = new Dictionary<DeskIcon, (int c, int r)>();
+        foreach (var i in icons)
+        {
+            var q = Cell(i);
+            if (at.ContainsKey(q)) { bool found = false; for (int c = 0; c < cols && !found; c++) for (int r = 0; r < rows && !found; r++) if (!at.ContainsKey((c, r))) { q = (c, r); found = true; } }
+            at[q] = i; spot[i] = q;
+        }
+        var moves = new List<(DeskIcon icon, Point dest)>();
+        for (int k = 0; k < order.Count; k++)
+        {
+            var t = (c: k / rows, r: k % rows); var ic = order[k];
+            if (spot[ic] == t) continue;
+            if (at.TryGetValue(t, out var blocker))
+            {
+                (int c, int r)? park = null;
+                for (int c = cols - 1; c >= 0 && park == null; c--) for (int r = rows - 1; r >= 0; r--) if (!at.ContainsKey((c, r))) { park = (c, r); break; }
+                if (park == null) return (none, "There's no free space to shuffle the icons around.");
+                moves.Add((blocker, Pt(park.Value))); at.Remove(t); at[park.Value] = blocker; spot[blocker] = park.Value;
+            }
+            var from = spot[ic]; at.Remove(from); at[t] = ic; spot[ic] = t; moves.Add((ic, Pt(t)));
+        }
+        return (moves, "");
+    }
+
     public string ArrangeIcons()
     {
         var icons = desk.Controls.OfType<DeskIcon>().ToList(); var old = IconSnapshot();
