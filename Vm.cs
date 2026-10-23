@@ -193,13 +193,38 @@ static class VmApp
         RoundButton start = null!, stop = null!; ComboBox boot = null!; NumericUpDown ram = null!; Label s1 = null!, s2 = null!, s3 = null!;
         RoundButton B(Control parent, string t, Func<Task> a, bool primary = true) { RoundButton? btn = null; btn = pg.Btn(parent, t, async () => { try { await a(); } catch (Exception ex) { st.Text = ex.Message; } Refresh(); }, primary); return btn; }
 
-        pg.H("Full OS (Linux)"); pg.P("Runs a real Linux computer inside a window. Everything is saved on the USB.", true);
-        pg.P("Easy setup", false, true, 13, 14); pg.P("One button. It looks for what's already on this USB, downloads and installs whatever is missing, asks you only a few simple questions, and starts Linux ready to log in.", true);
-        var rA = pg.Row(6); B(rA, "Set up Full OS automatically", () => Auto());
-        var lblPick = pg.Row(2); lblPick.Controls.Add(new Label { Text = "Or pick one directly (each one sets itself up):", AutoSize = true, ForeColor = Ui.Text, BackColor = Color.Transparent, Font = Ui.F(10.5f, true) });
-        var rD1 = pg.Row(6); var rD2 = pg.Row(10);
-        for (int di2 = 0; di2 < Distros.Length; di2++) { int qd9 = di2; B(di2 < 4 ? rD1 : rD2, Distros[di2].Name.Replace(" (Android-x86 9)", "") + (File.Exists(DiskFor(Distros[di2].Id)) ? "  ✓" : ""), () => Auto(qd9)); }
-        pg.P("Manual setup (optional)", false, true, 12, 20);
+        pg.H("Full OS (Linux)"); pg.P("Install the systems you like (as many as you want), then press Start on the one you want to use. Each one keeps its own files on your USB.", true);
+        var uxS1 = pg.P("", true, false, 10.5f, 2); var uxS2 = pg.P("", true, false, 10.5f, 2); var uxS3 = pg.P("", true, false, 10.5f, 6);
+        var uxTop = pg.Row(8); B(uxTop, "Help me choose", () => Auto()); var uxStop = B(uxTop, "Stop the running system", () => { try { run?.Kill(); } catch { } return Task.CompletedTask; }, false); uxStop.BackColor = Color.FromArgb(160, 60, 70);
+        pg.P("Your systems", false, true, 13, 10);
+        var uxCards = new List<(Distro dist, Label name, RoundButton inst, RoundButton go, RoundButton rm)>();
+        for (int uxi = 0; uxi < Distros.Length; uxi++)
+        {
+            int uxIx = uxi; var uxD = Distros[uxi];
+            var uxHead = pg.Row(0); var uxName = new Label { AutoSize = true, ForeColor = Ui.Text, BackColor = Color.Transparent, Font = Ui.F(11f, true) }; uxHead.Controls.Add(uxName);
+            pg.P(uxD.Note, true, false, 10, 2);
+            var uxRow = pg.Row(10);
+            var uxInst = B(uxRow, "Install", () => Auto(uxIx));
+            var uxGo = B(uxRow, "Start", async () =>
+            {
+                if (Running) { st.Text = "A system is already running. Press Stop first to switch to another one."; return; }
+                if (Exe("qemu-system-x86_64.exe") == null) { await Auto(uxIx); return; }   // engine missing on this PC: the guided setup brings it back
+                Cfg.Set("vm_distro", uxD.Id); pendingDistro = uxD.Id; boot.SelectedIndex = 0; if (uxD.Id is "kali" or "android" && ram.Value < 4096) ram.Value = 4096;
+                Refresh(); if (start.Enabled) start.PerformClick(); else st.Text = "Couldn't start " + uxD.Name + ". Try Install again.";
+            }, true);
+            var uxRm = B(uxRow, "Remove", () =>
+            {
+                var f = DiskFor(uxD.Id); if (!File.Exists(f)) return Task.CompletedTask;
+                if (Running && CurId == uxD.Id) { st.Text = "Stop it first, then remove it."; return Task.CompletedTask; }
+                if (MessageBox.Show("Delete " + uxD.Name + " and everything you saved inside it? This cannot be undone.", "Full OS", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return Task.CompletedTask;
+                try { File.Delete(f); st.Text = uxD.Name + " removed."; } catch (Exception ex) { st.Text = ex.Message; }
+                return Task.CompletedTask;
+            }, false);
+            if (uxD.Id == "android") B(uxRow, "Run Android installer", () => { if (Running) { st.Text = "Press Stop first."; return Task.CompletedTask; } Cfg.Set("vm_distro", "android"); pendingDistro = "android"; boot.SelectedIndex = 1; if (ram.Value < 4096) ram.Value = 4096; Refresh(); if (start.Enabled) start.PerformClick(); else st.Text = "No Android installer file yet. Press Install first."; return Task.CompletedTask; }, false);
+            uxCards.Add((uxD, uxName, uxInst, uxGo, uxRm));
+        }
+        pg.P("Tip: Debian is a normal desktop, Alpine is tiny and fast, Kali has security tools, Android runs apps and games.", true, false, 10, 4);
+        pg.P("Advanced setup (you normally do not need this)", false, true, 12, 20);
         pg.P("1  QEMU engine", false, true, 11, 12); s1 = pg.P("", true); var r1 = pg.Row(2);
         B(r1, "Install QEMU", async () =>
         {
@@ -264,7 +289,23 @@ static class VmApp
             bool q = Exe("qemu-system-x86_64.exe") != null, d = File.Exists(Disk), i = Iso() != null, on = run is { HasExited: false };
             s1.Text = q ? "Installed" : "Not installed yet"; s2.Text = i ? Path.GetFileName(Iso()!) : "No installer downloaded yet"; s3.Text = d ? $"{Path.GetFileName(Disk)} ({new FileInfo(Disk).Length / 1048576} MB used)" : "No disk yet";
             s1.ForeColor = q ? Color.FromArgb(110, 231, 160) : Ui.Sub; s2.ForeColor = i ? Color.FromArgb(110, 231, 160) : Ui.Sub; s3.ForeColor = d ? Color.FromArgb(110, 231, 160) : Ui.Sub;
-            start.Enabled = q && d && !on && (boot.SelectedIndex == 0 || i); stop.Enabled = on; if (on) st.Text = "Linux is running";
+            start.Enabled = q && d && !on && (boot.SelectedIndex == 0 || i); stop.Enabled = on; if (on) st.Text = "Linux is running"; RefreshCards();
+        }
+        void RefreshCards()
+        {
+            bool uxQ = Exe("qemu-system-x86_64.exe") != null, uxOn = run is { HasExited: false }; var uxHave = Distros.Where(x => File.Exists(DiskFor(x.Id))).ToList();
+            var uxGreen = Color.FromArgb(110, 231, 160); var uxRed = Color.FromArgb(240, 120, 130);
+            uxS1.Text = uxQ ? "✅  Step 1 · Engine ready" : "❌  Step 1 · Engine not installed yet (it installs by itself with your first system)"; uxS1.ForeColor = uxQ ? uxGreen : uxRed;
+            uxS2.Text = uxHave.Count > 0 ? "✅  Step 2 · Installed: " + string.Join(", ", uxHave.Select(x => x.Name.Replace(" (Android-x86 9)", ""))) : "❌  Step 2 · Install at least one system below"; uxS2.ForeColor = uxHave.Count > 0 ? uxGreen : uxRed;
+            var uxCur = Distros.FirstOrDefault(x => x.Id == CurId);
+            uxS3.Text = uxOn ? "✅  Step 3 · Running now: " + (uxCur?.Name.Replace(" (Android-x86 9)", "") ?? "Linux") : uxHave.Count > 0 ? "❌  Step 3 · Not running. Press Start on the system you want" : "❌  Step 3 · Press Start once a system is installed"; uxS3.ForeColor = uxOn ? uxGreen : uxRed;
+            uxStop.Enabled = uxOn;
+            foreach (var cd in uxCards)
+            {
+                bool has = File.Exists(DiskFor(cd.dist.Id)), me = uxOn && CurId == cd.dist.Id;
+                cd.name.Text = (has ? "✅  " : "❌  ") + cd.dist.Name.Replace(" (Android-x86 9)", "") + (me ? "   ·  RUNNING" : has ? "   ·  installed (" + new FileInfo(DiskFor(cd.dist.Id)).Length / 1048576 + " MB used)" : "   ·  not installed"); cd.name.ForeColor = has ? uxGreen : uxRed;
+                cd.inst.Enabled = !has && !uxOn; cd.go.Enabled = has && !uxOn; cd.rm.Enabled = has && !me;
+            }
         }
         async Task Auto(int pre = -1)
         {

@@ -25,20 +25,27 @@ static class VaultBackup
         return JsonDocument.Parse(b).RootElement.Clone();
     }
 
-    static async Task<HashSet<string>> Names(CancellationToken ct)
+    // name -> size in bytes (-1 when the vault does not report sizes)
+    static async Task<Dictionary<string, long>> Listing(CancellationToken ct)
     {
-        var j = await Json(Rq(HttpMethod.Get, "/v1/fs/list?dir="), ct); var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase); var arr = j;
+        var j = await Json(Rq(HttpMethod.Get, "/v1/fs/list?dir="), ct); var map = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase); var arr = j;
         if (j.ValueKind == JsonValueKind.Object) foreach (var p in j.EnumerateObject()) if (p.Value.ValueKind == JsonValueKind.Array) { arr = p.Value; break; }
-        if (arr.ValueKind != JsonValueKind.Array) return set;
+        if (arr.ValueKind != JsonValueKind.Array) return map;
         foreach (var e in arr.EnumerateArray())
         {
-            string? n = null;
+            string? n = null; long size = -1;
             if (e.ValueKind == JsonValueKind.String) n = e.GetString();
-            else if (e.ValueKind == JsonValueKind.Object) foreach (var k in new[] { "name", "filename", "server_filename", "path" }) if (e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String) { n = v.GetString(); break; }
-            if (!string.IsNullOrEmpty(n)) set.Add(Path.GetFileName(n.TrimEnd('/')));
+            else if (e.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var k in new[] { "name", "filename", "server_filename", "path" }) if (e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String) { n = v.GetString(); break; }
+                foreach (var k in new[] { "size", "bytes", "length" }) if (e.TryGetProperty(k, out var v2) && v2.ValueKind == JsonValueKind.Number && v2.TryGetInt64(out var sz)) { size = sz; break; }
+            }
+            if (!string.IsNullOrEmpty(n)) map[Path.GetFileName(n.TrimEnd('/'))] = size;
         }
-        return set;
+        return map;
     }
+    static async Task<HashSet<string>> Names(CancellationToken ct) => new HashSet<string>((await Listing(ct)).Keys, StringComparer.OrdinalIgnoreCase);
+    static async Task TryDelete(string rn, CancellationToken ct) { try { using var d = await Net.Http.SendAsync(Rq(HttpMethod.Post, "/v1/fs/delete", JsonSerializer.Serialize(new { path = rn })), ct); } catch { } }
 
     static async Task Upload(string local, string remote, CancellationToken ct)
     {
@@ -70,15 +77,47 @@ static class VaultBackup
     {
         var files = Directory.GetFiles(Dir).Where(f => f.EndsWith(".enc") || Path.GetFileName(f) == "salt.bin").ToList();
         if (files.Count == 0) throw new Exception("Nothing in the vault to back up yet.");
-        var have = await Names(ct); int done = 0, sent = 0;
+        say("Checking your TeraBox vault…"); var have = await Listing(ct); int done = 0, sent = 0, kept = 0;
         foreach (var f in files.OrderBy(f => Path.GetFileName(f) is "salt.bin" or "index.enc" ? 1 : 0))
         {
-            var n = Path.GetFileName(f); var rn = Pre + n; bool small = n is "salt.bin" or "index.enc"; done++;
-            say($"Backing up {done}/{files.Count}…");
-            if (have.Contains(rn)) { if (!small) continue; try { using var d = await Net.Http.SendAsync(Rq(HttpMethod.Post, "/v1/fs/delete", JsonSerializer.Serialize(new { path = rn })), ct); } catch { } }
+            var n = Path.GetFileName(f); var rn = Pre + n; bool small = n is "salt.bin" or "index.enc"; long len = new FileInfo(f).Length; done++;
+            say($"Backing up {done}/{files.Count}: {n}…");
+            bool there = have.TryGetValue(rn, out var rs);
+            if (there && !small && (rs < 0 || rs == len)) { kept++; continue; }   // already there (and the same size)
+            if (there) await TryDelete(rn, ct);
             await Upload(f, rn, ct); sent++;
         }
-        say($"Backup done: {sent} uploaded, {files.Count - sent} already there");
+        say("Checking that everything really arrived…");
+        var after = await Listing(ct); var bad = new List<string>();
+        foreach (var f in files)
+        {
+            var n = Path.GetFileName(f); long len = new FileInfo(f).Length;
+            if (!after.TryGetValue(Pre + n, out var sz)) bad.Add(n + " (missing in the vault)"); else if (sz >= 0 && sz != len) bad.Add(n + $" (wrong size: {sz} of {len} bytes)");
+        }
+        if (bad.Count > 0) throw new Exception("NOT fully backed up: " + string.Join(", ", bad) + ". Your USB files are untouched. Press Backup again, or press Test backup to find the problem.");
+        say($"Backup verified: all {files.Count} file(s) are in your TeraBox project ({sent} uploaded, {kept} already there).");
+    }
+
+    // Proves the whole path works: reach the vault, upload a tiny file, see it in the list, download it back and compare.
+    public static async Task<string> Test(Action<string> say, CancellationToken ct)
+    {
+        var sb = new StringBuilder(); const string rn = "usbdesktop-test.txt"; var tmp = Path.Combine(Path.GetTempPath(), "UsbDesktop-test.txt"); var back = Path.Combine(Path.GetTempPath(), "UsbDesktop-test-back.txt");
+        void Ok(string t) => sb.Append("✅ ").Append(t).Append('\n'); void No(string t) => sb.Append("❌ ").Append(t).Append('\n');
+        try
+        {
+            say("Test 1/4: reaching your vault…"); var l = await Listing(ct); Ok($"Connected and the key works ({l.Count} file(s) already in the project)");
+            var text = "usb desktop test " + DateTime.Now.Ticks; File.WriteAllText(tmp, text);
+            say("Test 2/4: uploading a tiny test file…"); if (l.ContainsKey(rn)) await TryDelete(rn, ct); await Upload(tmp, rn, ct); Ok("Test file uploaded");
+            say("Test 3/4: checking it is really there…"); var l2 = await Listing(ct);
+            if (!l2.ContainsKey(rn)) { No("The upload said done, but the file is not in the project's list. The key may belong to a different project, or the vault is not saving files."); return sb.ToString(); }
+            Ok("Test file shows up in your project");
+            say("Test 4/4: downloading it back…"); var sg = await Json(Rq(HttpMethod.Post, "/v1/fs/sign", JsonSerializer.Serialize(new { path = rn, ttl = 900 })), ct);
+            await Net.Download(sg.GetProperty("url").GetString()!, back, (_, _, _) => { }, ct);
+            if (File.ReadAllText(back) == text) Ok("Downloaded it back and it matches. Backups will arrive."); else No("It came back different from what was sent. Do not trust backups yet.");
+        }
+        catch (Exception ex) { No(ex.Message); }
+        finally { await TryDelete(rn, CancellationToken.None); try { File.Delete(tmp); } catch { } try { File.Delete(back); } catch { } }
+        return sb.ToString();
     }
 
     public static async Task Restore(Action<string> say, CancellationToken ct)
