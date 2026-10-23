@@ -112,7 +112,7 @@ static class Assistant
             "these control the Browser window: [[scroll:down|up|top|bottom]], [[nav:back|forward|reload]], [[goto:address or search words]], [[play:song or video name]] searches YouTube and plays the first result, [[media:play|pause|toggle|mute|unmute|next|fullscreen]], [[page:]] reads the page title, text and clickable items, [[click:text of a button or link]], [[type:box name|text to type]], [[key:enter]] presses Enter; open a Browser first with [[web:...]] if none is open; " +
             "[[pet:on|off|come]] shows or hides your walking character or calls it over; [[outfit:name]] changes its clothes (hoodie, school, hero, winter, formal, sporty, royal, pajamas, summer, random); [[carry:Icon name|topright]] makes the character walk over, squat, pick an icon up like a box, carry it and put it down at that place (same places as push); [[sort:az]] or [[sort:za]] makes the character carry every desktop icon one by one into alphabetical order (use carry or sort when the user wants to watch it arrange things, push for a short shove); [[push:Icon name|topright]] makes the character physically push a desktop icon (places: topleft, topright, bottomleft, bottomright, center, top, bottom, left N, right N, up N, down N, or col,row);  [[arrange:]] tidies desktop icons; [[undo:]] undoes the last change; [[clipread:]] and [[clipwrite:text]] use the clipboard; [[eject:]] safely ejects this USB; [[lock:]] locks the PC; [[sleep:]] sleeps the PC. " +
             "Right now: " + snap.Replace("\n", " | ") + ". " +
-            "Only use a tag when it helps or the user asks. Never mention these tags in your words. Keep replies short because they may be read out loud.";
+            "You really DO control this PC through these tags, so never say you cannot open, click, play or type something: just use the matching tag (for example [[web:https://www.youtube.com]] opens YouTube). Only use a tag when it helps or the user asks. Never mention these tags in your words. Keep replies short because they may be read out loud.";
     }
 
     static List<Dictionary<string, string>> Load()
@@ -152,15 +152,17 @@ static class Assistant
         try
         {
             if (model == "") { model = await Net.FirstModel(url, key); if (model == "") throw new Exception("No provider found in RelayAPI. Add one in its dashboard."); }
-            var msgs = new List<object> { new { role = "system", content = Sys(sh.DesktopSnapshot()) } };
-            foreach (var h in H.TakeLast(12)) msgs.Add(new { role = h["role"], content = h["content"] });
+            // RelayAPI keeps ONE saved chat per key and only forwards the newest message, so the rules must ride inside every user message (a separate system message would be dropped)
+            var msgs = new List<object>(); var hh = H.TakeLast(12).ToList();
+            for (int i = 0; i < hh.Count - 1; i++) msgs.Add(new { role = hh[i]["role"], content = hh[i]["content"] });
+            msgs.Add(new { role = "user", content = Sys(sh.DesktopSnapshot()) + "\n\nThe user says: " + text });
             for (int round = 0; round < 3; round++)
             {
                 var reply = await Net.Chat(url, key, model, msgs.ToArray(), CancellationToken.None);
                 var (shown, fbk) = await HandleReply(sh, reply);
                 if (shown != "") clean = clean == "" ? shown : clean + "\n" + shown;
                 if (fbk == "") break;
-                msgs.Add(new { role = "assistant", content = reply }); msgs.Add(new { role = "user", content = fbk });
+                msgs.Add(new { role = "assistant", content = reply }); msgs.Add(new { role = "user", content = "(USB Desktop results of your tags. You really can control this PC with tags, so keep using them and never say you cannot.)\n" + fbk });
             }
             if (clean == "") clean = "Done.";
             H.Add(new() { ["role"] = "assistant", ["content"] = clean }); Save(H);
