@@ -317,6 +317,7 @@ static class Views
                         try { var u = await Updater.Check(); if (u.latest > Updater.Cur) { ul.Text = "Version 1.0." + u.latest + " is available."; await Updater.Run(u.latest, u.url, true); } else ul.Text = "You're up to date."; }
                         catch (Exception ex) { ul.Text = "Couldn't check: " + ex.Message; }
                     });
+                    pg.Btn(r, "Copy problem report", () => { try { Clipboard.SetText(Report.Make()); ul.Text = "Report copied. Paste it to me in the chat."; } catch (Exception ex) { ul.Text = "Couldn't copy: " + ex.Message; } }, false);
                     if (Updater.HasPrevious) pg.Btn(r, "Go back to the previous version", () => { if (MessageBox.Show("Go back to the version you had before the last update? USB Desktop will restart.", "USB Desktop", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) Updater.Rollback(); }, false);
                     break;
                 }

@@ -19,6 +19,7 @@ static class Cfg
     static Cfg() { try { if (File.Exists(F)) foreach (var l in File.ReadAllLines(F)) { var i = l.IndexOf('='); if (i > 0) d[l[..i]] = l[(i + 1)..]; } } catch { } }
     public static string Get(string k, string def = "") => d.TryGetValue(k, out var v) ? v : def;
     public static int Int(string k, int def) => int.TryParse(Get(k), out var v) ? v : def;
+    public static IEnumerable<KeyValuePair<string, string>> All => d.ToList();
     public static void Set(string k, string v) { d[k] = v; try { File.WriteAllLines(F, d.Select(x => x.Key + "=" + x.Value)); } catch { } }
 }
 
@@ -223,7 +224,7 @@ static class Program
             if (MessageBox.Show(e.Message + "\n\nDetails saved to data\\error.log\n\nThis started right after an update. Go back to the previous version?", "USB Desktop", MessageBoxButtons.YesNo, MessageBoxIcon.Error) == DialogResult.Yes) Updater.Rollback();
             return;
         }
-        MessageBox.Show(e.Message + "\n\nDetails saved to data\\error.log", "USB Desktop");
+        MessageBox.Show(e.Message + "\n\nDetails saved to data\\error.log\n\nTip: Settings > About > Copy problem report, then paste it to your helper.", "USB Desktop");
     }
 }
 

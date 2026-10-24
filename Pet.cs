@@ -219,9 +219,27 @@ static class Pet
         new() { Name = "summer", T1 = Color.FromArgb(250, 212, 82), T2 = Color.FromArgb(240, 170, 50), Pants = Color.FromArgb(40, 110, 200), Shoes = Color.FromArgb(250, 250, 250), Shorts = true, Hat = "cap", HatC = Color.FromArgb(255, 120, 90), Glasses = true, Sun = true },
     };
 
+    // Picks an outfit from the weather where you are and the time of day (free weather service, no key).
+    public static async Task<string> AutoOutfit()
+    {
+        try
+        {
+            var loc = System.Text.Json.JsonDocument.Parse(await Net.Text("https://ipwho.is/")).RootElement; double lat = loc.GetProperty("latitude").GetDouble(), lon = loc.GetProperty("longitude").GetDouble();
+            var w = System.Text.Json.JsonDocument.Parse(await Net.Text(FormattableString.Invariant($"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code,is_day"))).RootElement.GetProperty("current");
+            double t = w.GetProperty("temperature_2m").GetDouble(); int code = w.GetProperty("weather_code").GetInt32(); bool day = w.GetProperty("is_day").GetInt32() == 1;
+            bool wet = code is >= 51 and <= 67 or >= 80 and <= 82 or >= 95; bool weekend = DateTime.Now.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+            string name = !day ? "pajamas" : t <= 14 ? "winter" : t >= 27 ? "summer" : wet ? "hoodie" : weekend ? "sporty" : "hoodie";
+            var o = Outfits.First(x => x.Name == name); Cfg.Set("pet_outfit", o.Name); if (sp != null) sp.Fit = o;
+            return "Now wearing " + o.Name + " (" + Math.Round(t) + "°C, " + (wet ? "rainy" : day ? "dry" : "night") + ").";
+        }
+        catch (Exception ex) { return "ERR: couldn't check the weather (" + ex.Message + ")."; }
+    }
+
     public static string SetOutfit(string a)
     {
-        a = a.Trim().ToLowerInvariant(); string names = string.Join(", ", Outfits.Select(o => o.Name));
+        a = a.Trim().ToLowerInvariant();
+        if (a == "auto on") { Cfg.Set("pet_auto", "1"); _ = AutoOutfit(); return "OK: it will pick its outfit by weather every time it starts."; }
+        if (a == "auto off") { Cfg.Set("pet_auto", "0"); return ""; } string names = string.Join(", ", Outfits.Select(o => o.Name));
         if (a == "" || a == "list") return "Outfits: " + names + ", random";
         var o = a == "random" ? Outfits[rnd.Next(Outfits.Length)] : Outfits.FirstOrDefault(x => x.Name == a) ?? Outfits.FirstOrDefault(x => x.Name.Contains(a) || a.Contains(x.Name));
         if (o == null) return "ERR: I don't have an outfit called " + a + ". Outfits: " + names;
@@ -384,7 +402,7 @@ static class Pet
     public static void Attach(DesktopForm s, Panel d)
     {
         if (sp != null) return; sh = s; desk = d;
-        sp = new PetSprite { Width = Ui.D(150), Height = Ui.D(170) }; sp.Fit = Outfits.FirstOrDefault(o => o.Name == Cfg.Get("pet_outfit", "hoodie")) ?? Outfits[0];
+        sp = new PetSprite { Width = Ui.D(150), Height = Ui.D(170) }; sp.Fit = Outfits.FirstOrDefault(o => o.Name == Cfg.Get("pet_outfit", "hoodie")) ?? Outfits[0]; if (Cfg.Get("pet_auto", "0") == "1") _ = AutoOutfit();
         win = new PetWin(); win.CreateControl(); var _h = win.Handle;
         var (box, t) = Ui.Input("Talk to " + Cfg.Get("ai_name", "Morales") + "…", false, 38); bar = box; tb = t; bar.Width = Ui.D(260); bar.Height = Ui.D(38); bar.Visible = false; d.Controls.Add(bar);
         pos = new PointF(Ui.D(320), Math.Max(Ui.D(60), d.Height - sp.Height - Ui.D(140)));
