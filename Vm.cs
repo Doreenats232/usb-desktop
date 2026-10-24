@@ -195,9 +195,9 @@ static class VmApp
 
         pg.H("Full OS (Linux)"); pg.P("Install the systems you like (as many as you want), then press Start on the one you want to use. Each one keeps its own files on your USB.", true);
         var uxS1 = pg.P("", true, false, 10.5f, 2); var uxS2 = pg.P("", true, false, 10.5f, 2); var uxS3 = pg.P("", true, false, 10.5f, 6);
-        var uxTop = pg.Row(8); B(uxTop, "Help me choose", () => Auto()); var uxStop = B(uxTop, "Stop the running system", () => { try { run?.Kill(); } catch { } return Task.CompletedTask; }, false); uxStop.BackColor = Color.FromArgb(160, 60, 70);
+        var uxCards = new List<(Distro dist, Label name, RoundButton inst, RoundButton go, RoundButton rm)>(); RoundButton uxStop = null!;
+        var uxTop = pg.Row(8); B(uxTop, "Help me choose", () => Auto()); uxStop = B(uxTop, "Stop the running system", () => { try { run?.Kill(); } catch { } return Task.CompletedTask; }, false); uxStop.BackColor = Color.FromArgb(160, 60, 70);
         pg.P("Your systems", false, true, 13, 10);
-        var uxCards = new List<(Distro dist, Label name, RoundButton inst, RoundButton go, RoundButton rm)>();
         for (int uxi = 0; uxi < Distros.Length; uxi++)
         {
             int uxIx = uxi; var uxD = Distros[uxi];
