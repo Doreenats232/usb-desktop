@@ -31,11 +31,20 @@ static class Updater
             dlg.Stage("Installing… restarting in a moment", 100); await Task.Delay(900);
             var exe = Path.GetFileName(Environment.ProcessPath)!;
             File.WriteAllText(Path.Combine(Paths.Root, "update.bat"),
-                "@echo off\r\ncd /d \"%~dp0\"\r\n:retry\r\nset /a n+=1\r\nping -n 2 127.0.0.1 >nul\r\nmove /y \"Launcher.new\" \"" + exe + "\" >nul 2>&1 && goto done\r\nif %n% lss 40 goto retry\r\n:done\r\nstart \"\" \"" + exe + "\"\r\n(goto) 2>nul & del \"%~f0\"\r\n");
+                "@echo off\r\ncd /d \"%~dp0\"\r\ncopy /y \"" + exe + "\" \"Launcher.previous\" >nul 2>&1\r\n:retry\r\nset /a n+=1\r\nping -n 2 127.0.0.1 >nul\r\nmove /y \"Launcher.new\" \"" + exe + "\" >nul 2>&1 && goto done\r\nif %n% lss 40 goto retry\r\n:done\r\nstart \"\" \"" + exe + "\"\r\n(goto) 2>nul & del \"%~f0\"\r\n");
             Process.Start(new ProcessStartInfo("cmd.exe", "/c update.bat") { WorkingDirectory = Paths.Root, CreateNoWindow = true, UseShellExecute = false });
             Application.Exit(); await Task.Delay(1500); Environment.Exit(0);
         }
         catch (Exception ex) { dlg.Fail(ex.Message); await WaitClosed(dlg); }
+    }
+    public static bool HasPrevious => File.Exists(Path.Combine(Paths.Root, "Launcher.previous"));
+    // Puts the version you had before the last update back, then restarts. Updates at or below the bad version are skipped.
+    public static void Rollback()
+    {
+        var exe = Path.GetFileName(Environment.ProcessPath)!; Cfg.Set("skip_ver", Cur.ToString());
+        File.WriteAllText(Path.Combine(Paths.Root, "rollback.bat"), "@echo off\r\ncd /d \"%~dp0\"\r\n:retry\r\nset /a n+=1\r\nping -n 2 127.0.0.1 >nul\r\nmove /y \"Launcher.previous\" \"" + exe + "\" >nul 2>&1 && goto done\r\nif %n% lss 40 goto retry\r\n:done\r\nstart \"\" \"" + exe + "\"\r\n(goto) 2>nul & del \"%~f0\"\r\n");
+        Process.Start(new ProcessStartInfo("cmd.exe", "/c rollback.bat") { WorkingDirectory = Paths.Root, CreateNoWindow = true, UseShellExecute = false });
+        Application.Exit(); Environment.Exit(0);
     }
     static async Task WaitClosed(Form f) { while (!f.IsDisposed && f.Visible) await Task.Delay(200); }
 }

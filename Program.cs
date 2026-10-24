@@ -218,6 +218,11 @@ static class Program
     static void Err(Exception e)
     {
         try { File.AppendAllText(Path.Combine(Paths.Data, "error.log"), DateTime.Now + " " + e + "\n\n"); } catch { }
+        if (Updater.HasPrevious && (DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMinutes < 3)
+        {
+            if (MessageBox.Show(e.Message + "\n\nDetails saved to data\\error.log\n\nThis started right after an update. Go back to the previous version?", "USB Desktop", MessageBoxButtons.YesNo, MessageBoxIcon.Error) == DialogResult.Yes) Updater.Rollback();
+            return;
+        }
         MessageBox.Show(e.Message + "\n\nDetails saved to data\\error.log", "USB Desktop");
     }
 }

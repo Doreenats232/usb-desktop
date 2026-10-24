@@ -110,6 +110,7 @@ static class Assistant
             "[[sticky:new text]] replaces the sticky note and [[stickyread:]] reads it; [[mkdir:Desktop/New]]; [[move:Desktop/a.txt|Desktop/Folder]]; [[copy:src|dst]]; [[rename:Desktop/a.txt|b.txt]]; [[delete:Desktop/a.txt]] (goes to the Recycle Bin); " +
             "[[schedule:startup|open:notepad]], [[schedule:daily 07:30|remind:text]] or [[schedule:every 30|remind:text]] (every N minutes, 5 or more) create a task (allowed actions: open:APP, web:URL, note:Title|text, sticky:text, remind:text, arrange:), [[tasks:]] lists them, [[unschedule:id or words]] removes one, tasks only run while USB Desktop is open; " +
             "these control the Browser window: [[scroll:down|up|top|bottom]], [[nav:back|forward|reload]], [[goto:address or search words]], [[play:song or video name]] searches YouTube and plays the first result, [[media:play|pause|toggle|mute|unmute|next|fullscreen]], [[page:]] reads the page title, text and clickable items, [[click:text of a button or link]], [[type:box name|text to type]], [[key:enter]] presses Enter; open a Browser first with [[web:...]] if none is open; " +
+            "[[spotify:play song name]] plays a song on the user's Spotify; also [[spotify:pause]], [[spotify:resume]], [[spotify:next]], [[spotify:previous]], [[spotify:volume 40]] and [[spotify:now]] (what is playing). [[mail:unread]] lists unread Gmail, [[mail:search words]] searches it, [[mail:read ID]] opens one email, [[mail:send to|subject|body]] sends one (the user is always asked first). [[cal:today]] or [[cal:week]] reads their Google Calendar. You get the results back to tell the user. If a result says the account is not connected, tell them to press Settings > Accounts. " +
             "[[pet:on|off|come]] shows or hides your walking character or calls it over; [[outfit:name]] changes its clothes (hoodie, school, hero, winter, formal, sporty, royal, pajamas, summer, random); [[carry:Icon name|topright]] makes the character walk over, squat, pick an icon up like a box, carry it and put it down at that place (same places as push); [[sort:az]] or [[sort:za]] makes the character carry every desktop icon one by one into alphabetical order (use carry or sort when the user wants to watch it arrange things, push for a short shove); [[push:Icon name|topright]] makes the character physically push a desktop icon (places: topleft, topright, bottomleft, bottomright, center, top, bottom, left N, right N, up N, down N, or col,row);  [[arrange:]] tidies desktop icons; [[undo:]] undoes the last change; [[clipread:]] and [[clipwrite:text]] use the clipboard; [[eject:]] safely ejects this USB; [[lock:]] locks the PC; [[sleep:]] sleeps the PC. " +
             "Right now: " + snap.Replace("\n", " | ") + ". " +
             "You really DO control this PC through these tags, so never say you cannot open, click, play or type something: just use the matching tag (for example [[web:https://www.youtube.com]] opens YouTube). Only use a tag when it helps or the user asks. Never mention these tags in your words. Keep replies short because they may be read out loud.";
@@ -135,6 +136,7 @@ static class Assistant
         try
         {
             synth ??= new System.Speech.Synthesis.SpeechSynthesizer();
+            try { var vn = Cfg.Get("ai_voice"); if (vn != "") synth.SelectVoice(vn); synth.Rate = Math.Clamp(Cfg.Int("ai_rate", 0), -10, 10); synth.Volume = 100; } catch { }
             if (!synth.GetInstalledVoices().Any(v => v.Enabled)) throw new Exception("Windows has no speech voice installed (Settings > Time & language > Speech).");
             synth.SetOutputToDefaultAudioDevice(); synth.Volume = 100; synth.SpeakAsyncCancelAll();
             EventHandler<System.Speech.Synthesis.SpeakCompletedEventArgs>? h = null; h = (_, _) => { synth!.SpeakCompleted -= h; done?.Invoke(); };
@@ -231,6 +233,7 @@ static class Assistant
                     case "pet": Pet.Command(a); break;
                     case "outfit": { var orr = Pet.SetOutfit(a); if (orr != "") fb.Add(orr); break; }
                     case "scroll": case "nav": case "goto": case "play": case "media": case "click": case "type": case "key": case "page": { var br = await BrowserCtl.Do(sh, k, a, trustB, Yes); if (br != "") fb.Add(br); break; }
+                    case "spotify": case "mail": case "cal": fb.Add(await Accounts.Run(k, a, trustB, Yes)); break;
                     case "unschedule": fb.Add(Sched.Remove(a)); break;
                     case "stickyread": fb.Add("Sticky note: " + Cfg.Get("sticky").Replace("¶", "\n")); break;
                     case "clipwrite": try { Clipboard.SetText(a); fb.Add("Copied to the clipboard."); } catch { fb.Add("Couldn't write the clipboard."); } break;
@@ -269,7 +272,7 @@ static class Assistant
         var bSet = TB("Settings", 82); var bClr = TB("Clear", 64); var bVoice = TB(Cfg.Get("ai_speak", "0") == "1" ? "Voice: On" : "Voice: Off", 92); var bTalk = TB("Talk", 76); var bUndo = TB("Undo", 64); var bTasks = TB("Tasks", 70);
 
         // settings
-        var set = new Panel { Dock = DockStyle.Top, Height = Ui.D(390), BackColor = Ui.Surface2, Visible = false, Padding = new Padding(Ui.D(14), Ui.D(4), Ui.D(14), Ui.D(8)) };
+        var set = new Panel { Dock = DockStyle.Top, Height = Ui.D(480), BackColor = Ui.Surface2, Visible = false, Padding = new Padding(Ui.D(14), Ui.D(4), Ui.D(14), Ui.D(8)) };
         var (uBox, uTb) = Ui.Input("RelayAPI address", false, 38); uTb.Text = Cfg.Get("ai_url", DefUrl);
         var (kBox, kTb) = Ui.Input("RelayAPI key", true, 38); kTb.Text = Cfg.Get("ai_key");
         var (mBox, mTb) = Ui.Input("Provider name (optional: empty uses your first provider)", false, 38); mTb.Text = Cfg.Get("ai_model");
@@ -282,7 +285,9 @@ static class Assistant
         var chk2 = new CheckBox { Text = "Show the walking character on the desktop when this window is closed", Dock = DockStyle.Top, Height = Ui.D(30), ForeColor = Ui.Text, BackColor = Color.Transparent, Font = Ui.F(9.5f), Checked = Cfg.Get("pet", "1") == "1" };
         chk2.CheckedChanged += (_, _) => Cfg.Set("pet", chk2.Checked ? "1" : "0");
         chk.CheckedChanged += (_, _) => Cfg.Set("ai_ask", chk.Checked ? "1" : "0");
-        set.Controls.Add(bSave); set.Controls.Add(Gap(6)); set.Controls.Add(chk); set.Controls.Add(Gap(4)); set.Controls.Add(chk2); set.Controls.Add(Gap(4)); set.Controls.Add(yBox); set.Controls.Add(Gap(6)); set.Controls.Add(nBox); set.Controls.Add(Gap(6)); set.Controls.Add(mBox); set.Controls.Add(Gap(6)); set.Controls.Add(kBox); set.Controls.Add(Gap(6)); set.Controls.Add(uBox);
+        var bAcc = new RoundButton { Text = "Accounts (Spotify, Gmail, Calendar)", Pill = true, BackColor = Ui.Line, ForeColor = Ui.Text, Height = Ui.D(34), Dock = DockStyle.Top }; bAcc.Click += (_, _) => Accounts.Show();
+        var bVc = new RoundButton { Text = "Voice check (test speaker and microphone)", Pill = true, BackColor = Ui.Line, ForeColor = Ui.Text, Height = Ui.D(34), Dock = DockStyle.Top }; bVc.Click += (_, _) => VoiceCheck.Show();
+        set.Controls.Add(bSave); set.Controls.Add(Gap(6)); set.Controls.Add(bAcc); set.Controls.Add(Gap(6)); set.Controls.Add(bVc); set.Controls.Add(Gap(6)); set.Controls.Add(chk); set.Controls.Add(Gap(4)); set.Controls.Add(chk2); set.Controls.Add(Gap(4)); set.Controls.Add(yBox); set.Controls.Add(Gap(6)); set.Controls.Add(nBox); set.Controls.Add(Gap(6)); set.Controls.Add(mBox); set.Controls.Add(Gap(6)); set.Controls.Add(kBox); set.Controls.Add(Gap(6)); set.Controls.Add(uBox);
 
         // chat + input
         var chat = new ChatList { Dock = DockStyle.Fill, Letter = aiName()[..1].ToUpper() };
