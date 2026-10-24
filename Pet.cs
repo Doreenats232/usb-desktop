@@ -13,7 +13,7 @@ class PetSprite
 {
     public int Width = 150, Height = 170;
     public bool Right = true, Moving, Talking; public int Push; public Outfit Fit = Pet.Outfits[0];
-    public float Bend; public Image? Held;   // Bend: 0 standing .. 1 squatting down to pick up / put down; Held: the icon picture being carried
+    public float Bend; public Image? Held; public bool Dance;   // Bend: 0 standing .. 1 squatting down to pick up / put down; Held: the icon picture being carried
     float phase, dustT; DateTime nextBlink = DateTime.Now.AddSeconds(2), blinkEnd; static readonly Random R = new();
     class Puff { public float X, Y, Age; } readonly List<Puff> dust = new();
     public void Step(float dt)
@@ -56,7 +56,7 @@ class PetSprite
         bool flip = !Right && Push < 2; float L = flip ? 1f : -1f; float bd = Math.Clamp(Bend, 0f, 1f);   // L: which way the light falls so shading stays on the same side when the character turns
         foreach (var d in dust) { using var b = new SolidBrush(Color.FromArgb((int)(120 * (1 - d.Age)), 215, 205, 195)); float r = (6 + d.Age * 16) * s; g.FillEllipse(b, d.X - r, d.Y - r * 0.6f, r * 2, r * 1.2f); }
         g.TranslateTransform(Width / 2f, Height - 8 * s); if (flip) g.ScaleTransform(-1, 1); g.ScaleTransform(s, s);
-        float sw = Moving ? MathF.Sin(phase) : 0f, bob = Moving ? -MathF.Abs(MathF.Cos(phase)) * (Push > 0 ? 2f : 4f) : MathF.Sin(t * 2f) * -1.5f;
+        float sw = Moving ? MathF.Sin(phase) : Dance ? MathF.Sin(t * 8f) * 0.45f : 0f, bob = Moving ? -MathF.Abs(MathF.Cos(phase)) * (Push > 0 ? 2f : 4f) : Dance ? -MathF.Abs(MathF.Sin(t * 8f)) * 6f : MathF.Sin(t * 2f) * -1.5f;
         var skin = Color.FromArgb(226, 176, 136); var hair = Color.FromArgb(44, 32, 34); var c1 = f.T1.IsEmpty ? Theme.Accent : f.T1; var c2 = f.T2.IsEmpty ? Ui.Accent2 : f.T2; var dark = Color.FromArgb(30, 24, 28);
         // soft contact shadow on the floor
         using (var gp = new GraphicsPath()) { gp.AddEllipse(-36f, -10f, 72f, 20f); using var pb = new PathGradientBrush(gp) { CenterColor = Color.FromArgb(120, 0, 0, 0), SurroundColors = new[] { Color.FromArgb(0, 0, 0, 0) } }; g.FillPath(pb, gp); }
@@ -125,6 +125,7 @@ class PetSprite
         else
         {
             if (Push == 1) { fa = 82f; na = 76f; } else if (Push == 2) { fa = 162f; na = -162f; } else if (Push == 3) { fa = 10f; na = -10f; }
+            else if (Dance) { fa = 150f + MathF.Sin(t * 8f) * 25f; na = -150f - MathF.Sin(t * 8f + 1.5f) * 25f; }
             else if (Talking) { fa = -talkArm; na = talkArm; } else { fa = sw * 32f; na = -sw * 32f; }
             h1 = Limb(g, 25, -112, 44, fa, c1, 12, L); h2 = Limb(g, -25, -112, 44, na, c1, 12, L);
         }
@@ -264,7 +265,7 @@ static class Pet
 
     // ---- carrying icons: walk over, squat, pick the icon up like a box, walk it to its place, squat, put it down ----
     class CarryJob { public List<(DeskIcon icon, Point dest)> Moves = new(); public int I, Phase, Side = 1; public float T; public bool Held, Setup; public PointF Stand, Hand, From; public DateTime Started = DateTime.Now; }
-    static CarryJob? cj;
+    static CarryJob? cj; static DateTime nextAudio = DateTime.MinValue; static int musicHits;
     const float ReachX = 44f, ReachY = 36f;   // where the hands meet the box when squatting, in character units (matches the squat pose in PetSprite.Draw)
 
     public static string Carry(DesktopForm s, string a)
@@ -402,11 +403,12 @@ static class Pet
     public static void Attach(DesktopForm s, Panel d)
     {
         if (sp != null) return; sh = s; desk = d;
-        sp = new PetSprite { Width = Ui.D(150), Height = Ui.D(170) }; sp.Fit = Outfits.FirstOrDefault(o => o.Name == Cfg.Get("pet_outfit", "hoodie")) ?? Outfits[0]; if (Cfg.Get("pet_auto", "0") == "1") _ = AutoOutfit();
+        sp = new PetSprite { Width = Ui.D(150), Height = Ui.D(170) }; sp.Fit = Outfits.FirstOrDefault(o => o.Name == Cfg.Get("pet_outfit", "hoodie")) ?? Outfits[0]; if (Cfg.Get("pet_auto", "0") == "1") _ = AutoOutfit(); _ = Study.Remind(sh);
         win = new PetWin(); win.CreateControl(); var _h = win.Handle;
         var (box, t) = Ui.Input("Talk to " + Cfg.Get("ai_name", "Morales") + "…", false, 38); bar = box; tb = t; bar.Width = Ui.D(260); bar.Height = Ui.D(38); bar.Visible = false; d.Controls.Add(bar);
         pos = new PointF(Ui.D(320), Math.Max(Ui.D(60), d.Height - sp.Height - Ui.D(140)));
         var menu = new ContextMenuStrip(); menu.Items.Add("Talk to me", null, (_, _) => ToggleBar());
+        var gm = new ToolStripMenuItem("Play a game"); gm.DropDownItems.Add("Snake", null, (_, _) => MiniGames.Open("snake")); gm.DropDownItems.Add("Tic-Tac-Toe", null, (_, _) => MiniGames.Open("tictactoe")); menu.Items.Add(gm);
         var cm = new ToolStripMenuItem("Change clothes"); foreach (var o in Outfits) { var n = o.Name; cm.DropDownItems.Add(char.ToUpper(n[0]) + n[1..], null, (_, _) => SetOutfit(n)); }
         menu.Items.Add(cm); menu.Items.Add("Hide the character", null, (_, _) => Cfg.Set("pet", "0")); win.ContextMenuStrip = menu;
         win.MouseDown += (_, e) =>
@@ -446,11 +448,14 @@ static class Pet
         if (cj != null && (cj.Held || Cfg.Get("pet", "1") != "1")) EndCarry(true);   // never leave an icon invisible if the character goes away
         if (!show) { if (win.Visible) { win.Hide(); bar.Visible = false; } return; }
         if (!win.Visible) { win.Show(sh); pos = Clamp(pos); }
+        if (job != null || cj != null) sp.Dance = false;
         if (job != null) { RunJob(dt, now); }
         else if (cj != null) { RunCarry(dt, now); }
         else
         {
-            bool still = dragging || speaking || busy || bar.Visible || now < pausedUntil;
+            if (now >= nextAudio) { nextAudio = now.AddMilliseconds(400); float pk = AudioMeter.Peak(); musicHits = pk > 0.03f ? Math.Min(musicHits + 1, 6) : Math.Max(musicHits - 1, 0); }
+            sp.Dance = musicHits >= 3 && Cfg.Get("pet_dance", "1") == "1" && !speaking && !busy && !dragging;
+            bool still = dragging || speaking || busy || bar.Visible || now < pausedUntil || sp.Dance;
             if (still) { sp.Moving = false; if (!dragging) target = null; }
             else if (target == null) { sp.Moving = false; if (now >= idleUntil) { var a = rnd.NextDouble() * Math.PI * 2; float r = Ui.D(150) + (float)rnd.NextDouble() * Ui.D(300); target = Clamp(new PointF(pos.X + MathF.Cos((float)a) * r, pos.Y + MathF.Sin((float)a) * r * 0.6f)); } }
             else

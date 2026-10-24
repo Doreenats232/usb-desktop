@@ -111,6 +111,7 @@ static class Assistant
             "[[schedule:startup|open:notepad]], [[schedule:daily 07:30|remind:text]] or [[schedule:every 30|remind:text]] (every N minutes, 5 or more) create a task (allowed actions: open:APP, web:URL, note:Title|text, sticky:text, remind:text, arrange:), [[tasks:]] lists them, [[unschedule:id or words]] removes one, tasks only run while USB Desktop is open; " +
             "these control the Browser window: [[scroll:down|up|top|bottom]], [[nav:back|forward|reload]], [[goto:address or search words]], [[play:song or video name]] searches YouTube and plays the first result, [[media:play|pause|toggle|mute|unmute|next|fullscreen]], [[page:]] reads the page title, text and clickable items, [[click:text of a button or link]], [[type:box name|text to type]], [[key:enter]] presses Enter; open a Browser first with [[web:...]] if none is open; " +
             "[[screen:]] shows you which windows are open on the user's PC and what is in front (titles only, not pixels); [[outfit:auto]] makes your character pick its outfit from the weather and time, and [[outfit:auto on]] or [[outfit:auto off]] does that at every start. " +
+            "[[homework:add Maths exercise 5|2026-10-28]] saves homework (date optional), [[homework:list]] shows it, [[homework:done 2]] ticks one off, [[homework:clear]] removes finished ones; [[timetable:set Mon|Maths, English]] saves a day, [[timetable:today]] or [[timetable:show]] reads it; [[studyfeed:]] opens the user's StudyFeed site ([[studyfeed:set ADDRESS]] saves it); you can also quiz the user on any subject by chatting. [[game:snake]] or [[game:tictactoe]] opens a mini game to play together. " +
             "[[spotify:play song name]] plays a song on the user's Spotify; also [[spotify:pause]], [[spotify:resume]], [[spotify:next]], [[spotify:previous]], [[spotify:volume 40]] and [[spotify:now]] (what is playing). [[mail:unread]] lists unread Gmail, [[mail:search words]] searches it, [[mail:read ID]] opens one email, [[mail:send to|subject|body]] sends one (the user is always asked first). [[cal:today]] or [[cal:week]] reads their Google Calendar. You get the results back to tell the user. If a result says the account is not connected, tell them to press Settings > Accounts. " +
             "[[pet:on|off|come]] shows or hides your walking character or calls it over; [[outfit:name]] changes its clothes (hoodie, school, hero, winter, formal, sporty, royal, pajamas, summer, random); [[carry:Icon name|topright]] makes the character walk over, squat, pick an icon up like a box, carry it and put it down at that place (same places as push); [[sort:az]] or [[sort:za]] makes the character carry every desktop icon one by one into alphabetical order (use carry or sort when the user wants to watch it arrange things, push for a short shove); [[push:Icon name|topright]] makes the character physically push a desktop icon (places: topleft, topright, bottomleft, bottomright, center, top, bottom, left N, right N, up N, down N, or col,row);  [[arrange:]] tidies desktop icons; [[undo:]] undoes the last change; [[clipread:]] and [[clipwrite:text]] use the clipboard; [[eject:]] safely ejects this USB; [[lock:]] locks the PC; [[sleep:]] sleeps the PC. " +
             "Right now: " + snap.Replace("\n", " | ") + ". " +
@@ -170,8 +171,49 @@ static class Assistant
             if (clean == "") clean = "Done.";
             H.Add(new() { ["role"] = "assistant", ["content"] = clean }); Save(H);
         }
-        catch { H.RemoveAt(H.Count - 1); throw; }
+        catch (Exception ex)
+        {
+            if (ex is HttpRequestException { StatusCode: null } || !System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
+            {
+                var off = await Offline(sh, text) ?? "I can't reach the internet right now, so I can only do simple things: open apps (\"open notepad\"), sort or tidy icons, lock, undo, tell the time, show homework, play a game. Try one of those.";
+                H.Add(new() { ["role"] = "assistant", ["content"] = off }); Save(H); if (fromPet) Message?.Invoke(false, off); Replied?.Invoke(off, fromPet); return off;
+            }
+            H.RemoveAt(H.Count - 1); throw;
+        }
         if (fromPet) Message?.Invoke(false, clean); Replied?.Invoke(clean, fromPet); return clean;
+    }
+
+    // With no internet the assistant still understands simple commands (open an app, sort icons, lock, time, homework, games).
+    static async Task<string?> Offline(DesktopForm sh, string text)
+    {
+        var t = text.Trim().ToLowerInvariant().TrimEnd('.', '!', '?'); string tags = "", say = "";
+        var m = Regex.Match(t, @"^(?:please )?(?:open|launch|start|run)\s+(?:the |my )?(.+)$");
+        if (m.Success)
+        {
+            var n = m.Groups[1].Value.Trim(); n = n switch { "calculator" => "calc", "file manager" or "file explorer" or "file" or "my files" => "files", "terminal" or "command prompt" => "term", "text editor" or "notes" => "notepad", "browser" or "internet" => "web", _ => n };
+            if (Apps.Contains(n)) { tags = "[[open:" + n + "]]"; say = "Opening " + n + "."; }
+            else if (n.Contains("snake")) { tags = "[[game:snake]]"; say = "Let's play Snake."; }
+            else if (n.Contains("tic")) { tags = "[[game:tictactoe]]"; say = "Let's play Tic-Tac-Toe."; }
+        }
+        if (tags == "")
+        {
+            if (Regex.IsMatch(t, @"\b(sort|arrange|line up|organi[sz]e)\b.*\b(a to z|a-z|alphabet)")) { tags = "[[sort:az]]"; say = "Sorting the icons A to Z."; }
+            else if (Regex.IsMatch(t, @"\b(tidy|arrange|organi[sz]e|clean up)\b.*\b(icons|desktop)\b")) { tags = "[[arrange:]]"; say = "Tidying the desktop."; }
+            else if (t is "undo" or "undo that" or "undo it") { tags = "[[undo:]]"; say = "Undoing."; }
+            else if (Regex.IsMatch(t, @"^lock( the)?( pc| computer| screen)?$")) { tags = "[[lock:]]"; say = "Locking."; }
+            else if (Regex.IsMatch(t, @"^(eject|safely remove)( the)?( usb| drive)?$")) { tags = "[[eject:]]"; say = "Ejecting."; }
+            else if (Regex.IsMatch(t, @"^(sleep|go to sleep)( the)?( pc| computer)?$")) { tags = "[[sleep:]]"; say = "Going to sleep."; }
+            else if (Regex.IsMatch(t, @"\b(come here|come over)\b")) { tags = "[[pet:come]]"; say = "On my way!"; }
+            else if (Regex.IsMatch(t, @"\b(homework|assignments?)\b")) { tags = "[[homework:list]]"; say = "Your homework:"; }
+            else if (Regex.IsMatch(t, @"\btimetable\b|\bschedule for today\b")) { tags = "[[timetable:today]]"; say = "Today's lessons:"; }
+            else if (Regex.IsMatch(t, @"\b(play|game)\b.*\bsnake\b|\bsnake\b")) { tags = "[[game:snake]]"; say = "Let's play Snake."; }
+            else if (Regex.IsMatch(t, @"\b(tic.?tac.?toe|noughts)\b")) { tags = "[[game:tictactoe]]"; say = "Let's play Tic-Tac-Toe."; }
+            else if (Regex.IsMatch(t, @"\bwhat('?s| is)? (the )?time\b|\bwhat time\b")) return "(offline) It's " + DateTime.Now.ToString("h:mm tt") + ".";
+            else if (Regex.IsMatch(t, @"\b(what('?s| is)? (the |today'?s )?date|what day)\b")) return "(offline) Today is " + DateTime.Now.ToString("dddd, d MMMM yyyy") + ".";
+        }
+        if (tags == "") return null;
+        var (shown, fbk) = await HandleReply(sh, tags);
+        return "(offline) " + say + (fbk != "" ? "\n" + fbk : "");
     }
 
     static string RunTags(DesktopForm sh, string reply)
@@ -235,6 +277,8 @@ static class Assistant
                     case "screen": if (trustB || Yes("The assistant wants to see which windows are open on this PC. Allow?")) fb.Add(await Task.Run(() => ScreenSee.Look(sh))); else fb.Add("The user did not allow looking at the screen."); break;
                     case "outfit": { var orr = a.Trim().ToLowerInvariant() == "auto" ? await Pet.AutoOutfit() : Pet.SetOutfit(a); if (orr != "") fb.Add(orr); break; }
                     case "scroll": case "nav": case "goto": case "play": case "media": case "click": case "type": case "key": case "page": { var br = await BrowserCtl.Do(sh, k, a, trustB, Yes); if (br != "") fb.Add(br); break; }
+                    case "homework": case "timetable": case "studyfeed": fb.Add(Study.Run(k, a, sh)); break;
+                    case "game": fb.Add(MiniGames.Open(a)); break;
                     case "spotify": case "mail": case "cal": fb.Add(await Accounts.Run(k, a, trustB, Yes)); break;
                     case "unschedule": fb.Add(Sched.Remove(a)); break;
                     case "stickyread": fb.Add("Sticky note: " + Cfg.Get("sticky").Replace("¶", "\n")); break;
