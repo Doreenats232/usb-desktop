@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 namespace UsbDesktop;
 
 // Study helper for the assistant: homework list with due dates, a weekly timetable, and a shortcut to your StudyFeed site. Everything is a plain text file on the USB.
@@ -59,6 +61,51 @@ static class Study
         }
         catch (Exception ex) { return kind + " failed: " + ex.Message; }
     }
+    // ---- StudyFeed (your live site): today's quiz questions, answers on request, simple explanations ----
+    const string FeedUrl = "https://studyfeed-6v3c.onrender.com";
+    static List<(string id, string subj, string text)> lastFeed = new();
+    static string Str(JsonElement p, string k) => p.ValueKind == JsonValueKind.Object && p.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+    public static async Task<string> Feed(string a, DesktopForm sh)
+    {
+        try
+        {
+            var u = Cfg.Get("studyfeed_url"); if (u == "") { u = FeedUrl; Cfg.Set("studyfeed_url", u); } u = u.TrimEnd('/');
+            var i = a.IndexOf(' '); var cmd = (i > 0 ? a[..i] : a).Trim().ToLowerInvariant(); var arg = i > 0 ? a[(i + 1)..].Trim() : "";
+            if (cmd == "set") { Cfg.Set("studyfeed_url", arg); return "Saved your StudyFeed address."; }
+            if (cmd == "" || cmd == "open") { sh.Launch("web", u); return "Opened StudyFeed."; }
+            if (cmd is "feed" or "today" or "quiz")
+            {
+                var arr = JsonDocument.Parse(await Net.Text(u + "/api/feed")).RootElement; var list = new List<(string id, string subj, string text)>();
+                foreach (var p in arr.EnumerateArray())
+                {
+                    string type = Str(p, "type"), subj = Str(p, "subject"), text = Str(p, "text"), pid = Str(p, "id");
+                    if (type != "quiz" && type != "question") continue;
+                    if (cmd == "today") { long ts = p.TryGetProperty("ts", out var tv) && tv.TryGetInt64(out var t0) ? t0 : 0; if (DateTimeOffset.FromUnixTimeMilliseconds(ts).LocalDateTime.Date != DateTime.Now.Date) continue; }
+                    else if (arg != "" && !subj.Contains(arg, StringComparison.OrdinalIgnoreCase)) continue;
+                    list.Add((pid, subj, text)); if (list.Count >= (cmd == "today" ? 16 : 8)) break;
+                }
+                if (list.Count == 0) return cmd == "today" ? "No new StudyFeed questions today yet." : "No StudyFeed questions found" + (arg != "" ? " for " + arg : "") + ".";
+                lastFeed = list;
+                return string.Join("\n", list.Select((x, n) => (n + 1) + ". [" + x.subj + "] " + x.text)) + "\n(Answers stay hidden until the user asks; then use studyfeed answer N.)";
+            }
+            if (cmd == "answer")
+            {
+                if (!int.TryParse(arg, out var n) || n < 1 || n > lastFeed.Count) return "List the questions first (studyfeed today or studyfeed feed), then ask for an answer by its number.";
+                var j = JsonDocument.Parse(await Net.Text(u + "/api/posts/" + lastFeed[n - 1].id + "/answer")).RootElement; var ans = Str(j, "answer");
+                return ans == "" ? "That question has no saved answer." : "Answer to " + n + ": " + ans;
+            }
+            if (cmd == "explain")
+            {
+                if (arg == "") return "studyfeed explain needs the text to explain.";
+                using var resp = await Net.Http.PostAsync(u + "/api/explain", new StringContent(JsonSerializer.Serialize(new { text = arg }), Encoding.UTF8, "application/json"));
+                var j = JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement;
+                return resp.IsSuccessStatusCode ? Str(j, "text") : "StudyFeed couldn't explain that: " + Str(j, "error");
+            }
+            return "Unknown StudyFeed command. Use open, today, feed [subject], answer N or explain text.";
+        }
+        catch (Exception ex) { return "StudyFeed failed: " + ex.Message + " (the free site can take about a minute to wake up; try again)."; }
+    }
+
     // A friendly reminder a few seconds after start when homework is due today, tomorrow or overdue.
     public static async Task Remind(DesktopForm sh)
     {
