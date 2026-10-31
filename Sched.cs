@@ -86,6 +86,20 @@ static class Sched
         }
     }
 
+    // Real alarm: loud beeping and a window on top until you press OK.
+    static void Ring(DesktopForm sh, string text)
+    {
+        bool stop = false;
+        var th = new System.Threading.Thread(() => { while (!stop) { try { Console.Beep(880, 350); Console.Beep(660, 350); } catch { SystemSounds.Exclamation.Play(); System.Threading.Thread.Sleep(700); } } }) { IsBackground = true };
+        th.Start(); sh.Toast("⏰ " + text);
+        sh.BeginInvoke(new Action(() =>
+        {
+            try { using var o = new Form { TopMost = true, ShowInTaskbar = false, StartPosition = FormStartPosition.CenterScreen, Size = new Size(1, 1), Opacity = 0 }; o.Show(); MessageBox.Show(o, text, "⏰ Alarm", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+            catch { }
+            stop = true;
+        }));
+    }
+
     static void Run(TaskItem t)
     {
         var sh = shell; if (sh == null) return; t.Last = DateTime.Now; Save();
@@ -96,7 +110,7 @@ static class Sched
             {
                 case "open": sh.Launch(arg.ToLowerInvariant()); break;
                 case "web": sh.Launch("web", arg); break;
-                case "remind": SystemSounds.Asterisk.Play(); sh.Toast("⏰ " + arg); break;
+                case "remind": Ring(sh, arg); break;
                 case "sticky": Cfg.Set("sticky", arg.Replace("\\n", "¶")); sh.ApplyWidgets(); break;
                 case "arrange": sh.ArrangeIcons(); break;
                 case "note":
