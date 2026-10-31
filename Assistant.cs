@@ -157,9 +157,8 @@ static class Assistant
         {
             if (model == "") { model = await Net.FirstModel(url, key); if (model == "") throw new Exception("No provider found in RelayAPI. Add one in its dashboard."); }
             // RelayAPI keeps ONE saved chat per key and only forwards the newest message, so the rules must ride inside every user message (a separate system message would be dropped)
-            var msgs = new List<object>(); var hh = H.TakeLast(12).ToList();
-            for (int i = 0; i < hh.Count - 1; i++) msgs.Add(new { role = hh[i]["role"], content = hh[i]["content"] });
-            msgs.Add(new { role = "user", content = Sys(sh.DesktopSnapshot()) + "\n\nThe user says: " + text });
+            var msgs = new List<object>(); // old chat is NOT re-sent: a new key/chat would replay and redo every old request
+            msgs.Add(new { role = "user", content = Sys(sh.DesktopSnapshot()) + "\n\nIMPORTANT: act ONLY on the message below. Anything said earlier is finished: never redo, repeat or reopen earlier requests, pages or tabs.\n\nThe user says: " + text });
             for (int round = 0; round < 3; round++)
             {
                 var reply = await Net.Chat(url, key, model, msgs.ToArray(), CancellationToken.None);
@@ -242,9 +241,12 @@ static class Assistant
     {
         var fb = new List<string>(); var muts = new List<(string k, string a)>(); bool trustB = Cfg.Get("ai_ask", "0") != "1";
         bool Yes(string t) => MessageBox.Show(t, "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+        var seenTags = new HashSet<string>(); int opens = 0;
         foreach (Match m in Act.Matches(reply))
         {
             var k = m.Groups[1].Value.ToLowerInvariant(); var a = m.Groups[2].Value.Trim(); if (!AiActions.Kinds.Contains(k)) continue;
+            if (!seenTags.Add(k + "|" + a)) continue; // same tag twice in one reply: run once
+            if ((k == "web" || k == "open") && ++opens > 2) continue; // never flood with new windows/tabs
             try
             {
                 switch (k)
