@@ -147,6 +147,15 @@ static class Assistant
         catch (Exception ex) { onError?.Invoke(ex.Message); done?.Invoke(); }
     }
 
+    // The AI website's page text can come back with our prompt and old tool results pasted after the real reply. Cut at the first echo marker so echoed example tags never run.
+    static string StripEcho(string reply)
+    {
+        string[] marks = { "You are " + Cfg.Get("ai_name", "Morales") + ", the built-in assistant of USB Desktop", "IMPORTANT: act ONLY on the message below", "(USB Desktop results of your tags", "The user says: ", "You can act on the desktop by putting action tags" };
+        int cut = reply.Length;
+        foreach (var m in marks) { int i = reply.IndexOf(m, StringComparison.Ordinal); if (i >= 0 && i < cut) cut = i; }
+        return reply[..cut].Trim();
+    }
+
     // One full conversation turn (used by the chat window and by the walking character).
     public static async Task<string> Converse(DesktopForm sh, string text, bool fromPet)
     {
@@ -162,6 +171,7 @@ static class Assistant
             for (int round = 0; round < 3; round++)
             {
                 var reply = await Net.Chat(url, key, model, msgs.ToArray(), CancellationToken.None);
+                reply = StripEcho(reply); // RelayAPI sometimes sends back our own rules and old results: keep only the real reply
                 var (shown, fbk) = await HandleReply(sh, reply);
                 if (shown != "") clean = clean == "" ? shown : clean + "\n" + shown;
                 if (fbk == "") break;
@@ -175,6 +185,7 @@ static class Assistant
             if (ex is HttpRequestException { StatusCode: null } || !System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
             {
                 var off = await Offline(sh, text) ?? "I can't reach the internet right now, so I can only do simple things: open apps (\"open notepad\"), sort or tidy icons, lock, undo, tell the time, show homework, play a game. Try one of those.";
+                off += "\n(Reason: " + ex.Message + ")";
                 H.Add(new() { ["role"] = "assistant", ["content"] = off }); Save(H); if (fromPet) Message?.Invoke(false, off); Replied?.Invoke(off, fromPet); return off;
             }
             H.RemoveAt(H.Count - 1); throw;
