@@ -115,6 +115,7 @@ class Win : Panel
         t.Start();
     }
     void SnapTo(int side) { if (!snapped && !max) rest = Bounds; snapped = true; max = false; mx.Glyph = "max"; Bounds = new Rectangle(side == 0 ? 0 : Parent!.Width / 2, 0, Parent!.Width / 2, Parent.Height); grip.BringToFront(); }
+    public void SetMax(bool on) { if (max != on) Toggle(); }
     public void Toggle()
     {
         if (Parent == null) return;
@@ -325,6 +326,27 @@ class DesktopForm : Form
     }
 
     public bool AssistantOpen() => wins.Any(x => x.w.Visible && x.w.Title == "AI Assistant");
+
+    // Window control for the assistant: maximize, restore, minimize, close or bring to front a window on the USB Desktop.
+    public string WindowCmd(string action, string title)
+    {
+        title = title.Trim().ToLowerInvariant(); Win? w = null;
+        if (title == "" || title == "browser" || title == "web" || title == "the browser")
+            w = desk.Controls.OfType<Win>().FirstOrDefault(x => x.Visible && x.Content.Tag is BrowserApi) ?? wins.Select(x => x.w).LastOrDefault(x => x.Content.Tag is BrowserApi);
+        if (w == null && title != "") w = wins.Select(x => x.w).LastOrDefault(x => x.Title.ToLowerInvariant().Contains(title));
+        if (w == null && title == "") w = wins.Select(x => x.w).LastOrDefault(x => x.Visible);
+        if (w == null) return "ERR: I couldn't find a window called \"" + title + "\".";
+        switch (action)
+        {
+            case "maximize": w.Visible = true; w.SetMax(true); w.Raise(); break;
+            case "restore": w.Visible = true; w.SetMax(false); w.Raise(); break;
+            case "front": w.Visible = true; w.Raise(); break;
+            case "minimize": w.Visible = false; Sync(); desk.Invalidate(); break;
+            case "close": w.Closed?.Invoke(w); break;
+            default: return "ERR: window actions are maximize, restore, minimize, close, front.";
+        }
+        return "Window \"" + w.Title + "\": " + action + " done.";
+    }
 
     public BrowserApi? ActiveBrowser()
     {
