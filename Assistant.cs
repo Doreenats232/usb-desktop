@@ -329,7 +329,7 @@ static class Assistant
         var btns = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, BackColor = Color.Transparent, Padding = new Padding(0, Ui.D(16), Ui.D(8), 0) };
         RoundButton TB(string t, int w) { var b = new RoundButton { Text = t, Pill = true, BackColor = Ui.Line, ForeColor = Ui.Text, Width = Ui.D(w), Height = Ui.D(32), Font = Ui.F(9), Margin = new Padding(Ui.D(4), 0, 0, 0) }; btns.Controls.Add(b); return b; }
         head.Controls.Add(orb); head.Controls.Add(title); head.Controls.Add(sub); head.Controls.Add(btns);
-        var bSet = TB("Settings", 82); var bClr = TB("Clear", 64); var bVoice = TB(Cfg.Get("ai_speak", "0") == "1" ? "Voice: On" : "Voice: Off", 92); var bTalk = TB("Talk", 76); var bUndo = TB("Undo", 64); var bTasks = TB("Tasks", 70); var bCopy = TB("Copy chat", 88);
+        var bSet = TB("Settings", 82); var bClr = TB("Clear", 64); var bVoice = TB(Cfg.Get("ai_speak", "0") == "1" ? "Voice: On" : "Voice: Off", 92); var bTalk = TB("Talk", 76); var bUndo = TB("Undo", 64); var bTasks = TB("Tasks", 70); var bCopy = TB("Copy chat", 88); var bPhone = TB("Phone", 72);
 
         // settings
         var set = new Panel { Dock = DockStyle.Top, Height = Ui.D(480), BackColor = Ui.Surface2, Visible = false, Padding = new Padding(Ui.D(14), Ui.D(4), Ui.D(14), Ui.D(8)) };
@@ -425,6 +425,7 @@ static class Assistant
             Cfg.Set("ai_name", nTb.Text.Trim() == "" ? "Morales" : nTb.Text.Trim()); Cfg.Set("ai_user", yTb.Text.Trim() == "" ? "Boss" : yTb.Text.Trim());
             title.Text = aiName(); orb.Letter = chat.Letter = aiName()[..1].ToUpper(); orb.Invalidate(); chat.Invalidate(); set.Visible = false; sh.Toast("Assistant settings saved");
         };
+        bPhone.Click += (_, _) => PhoneLink.Manage(sh);
         bCopy.Click += (_, _) =>
         {
             try
