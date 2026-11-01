@@ -153,15 +153,46 @@ static class VaultBackup
         try { File.Delete(tmp); } catch { } say("Settings loaded. Restart USB Desktop to apply them.");
     }
 
+    // Backs the vault up by itself a couple of minutes after it changes, then tells you with a tick or a cross.
+    static DateTime nextTry = DateTime.MinValue;
+    public static void AutoStart(DesktopForm sh)
+    {
+        var t = new System.Windows.Forms.Timer { Interval = 60000 }; bool busy = false;
+        t.Tick += async (_, _) =>
+        {
+            if (busy || DateTime.Now < nextTry || Cfg.Get("vault_auto", "1") != "1" || !Ready || !Directory.Exists(Dir)) return;
+            try
+            {
+                var files = Directory.GetFiles(Dir).Where(f => f.EndsWith(".enc") || Path.GetFileName(f) == "salt.bin").ToList(); if (files.Count == 0) return;
+                var newest = files.Max(f => File.GetLastWriteTimeUtc(f)).Ticks; long.TryParse(Cfg.Get("vault_auto_seen"), out var seen);
+                if (newest <= seen) return;                                                        // nothing new since the last good backup
+                if ((DateTime.UtcNow - new DateTime(newest, DateTimeKind.Utc)).TotalSeconds < 120) return; // wait until the changes settle
+                busy = true;
+                await Backup(_ => { }, CancellationToken.None);
+                Cfg.Set("vault_auto_seen", newest.ToString());
+                sh.Toast("☁ Vault backed up automatically ✅"); Pet.React("☁ Vault backed up ✅", 5);
+            }
+            catch (Exception ex)
+            {
+                nextTry = DateTime.Now.AddMinutes(30);   // don't nag: try again in half an hour
+                var m = ex.Message.Length > 120 ? ex.Message[..120] + "…" : ex.Message;
+                sh.Toast("☁ Vault auto-backup failed ❌ " + m); Pet.React("☁ Vault backup failed ❌", 6);
+            }
+            busy = false;
+        };
+        t.Start();
+    }
+
     public static void Settings()
     {
-        using var f = new Form { Text = "Vault backup settings", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen, ClientSize = new Size(480, 200), MaximizeBox = false, MinimizeBox = false, TopMost = true };
+        using var f = new Form { Text = "Vault backup settings", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen, ClientSize = new Size(480, 240), MaximizeBox = false, MinimizeBox = false, TopMost = true };
         var l1 = new Label { Text = "TeraBox vault address", Left = 16, Top = 14, AutoSize = true };
         var u = new TextBox { Left = 16, Top = 36, Width = 448, Text = Cfg.Get("vault_url", "https://terabox-vault-backend-1.onrender.com") };
         var l2 = new Label { Text = "API key (for the project that holds your backups)", Left = 16, Top = 72, AutoSize = true };
         var k = new TextBox { Left = 16, Top = 94, Width = 448, UseSystemPasswordChar = true, Text = Cfg.Get("vault_key") };
-        var ok = new Button { Text = "Save", Left = 16, Top = 140, Width = 110, Height = 32, DialogResult = DialogResult.OK };
-        f.Controls.AddRange(new Control[] { l1, u, l2, k, ok }); f.AcceptButton = ok;
-        if (f.ShowDialog() == DialogResult.OK) { Cfg.Set("vault_url", u.Text.Trim()); Cfg.Set("vault_key", k.Text.Trim()); }
+        var auto = new CheckBox { Text = "Back up automatically a few minutes after the vault changes", Left = 16, Top = 130, Width = 448, Checked = Cfg.Get("vault_auto", "1") == "1" };
+        var ok = new Button { Text = "Save", Left = 16, Top = 180, Width = 110, Height = 32, DialogResult = DialogResult.OK };
+        f.Controls.AddRange(new Control[] { l1, u, l2, k, auto, ok }); f.AcceptButton = ok;
+        if (f.ShowDialog() == DialogResult.OK) { Cfg.Set("vault_url", u.Text.Trim()); Cfg.Set("vault_key", k.Text.Trim()); Cfg.Set("vault_auto", auto.Checked ? "1" : "0"); }
     }
 }

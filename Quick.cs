@@ -51,6 +51,8 @@ static class Quick
                 case "study": _ = PhoneLink.PostStudy(); return "Study list refreshed.";
                 case "hw": { var r = Study.PhoneAction("hw", a); _ = PhoneLink.PostStudy(); _ = PhoneLink.PostEvents(); return r; }
                 case "lesson": { var r = Study.PhoneAction("lesson", a); _ = PhoneLink.PostStudy(); _ = PhoneLink.PostEvents(); return r; }
+                case "clips": return ClipHist.Run("list");
+                case "clipuse": return ClipHist.Run("use " + a);
                 case "status": return Status(sh);
                 case "screen":
                     {

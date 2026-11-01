@@ -438,6 +438,12 @@ static class Pet
     }
 
     static PointF Clamp(PointF p) => desk == null || sp == null ? p : new PointF(Math.Clamp(p.X, 0, Math.Max(0, desk.Width - sp.Width)), Math.Clamp(p.Y, Ui.D(20), Math.Max(Ui.D(20), desk.Height - sp.Height - Ui.D(54))));
+    static DateTime danceUntil = DateTime.MinValue;
+    // Lets other parts of the app make the character say something (and optionally dance for a few seconds)
+    public static void React(string text, double secs, bool dance = false)
+    {
+        try { if (win == null || !win.Visible) return; ShowBubble(text, secs); if (dance) danceUntil = DateTime.Now.AddSeconds(5); } catch { }
+    }
     static double BubbleSecs(string t) => Math.Clamp(10 + t.Length * 0.1, 12, 90);
 
     static void Tick()
@@ -454,7 +460,7 @@ static class Pet
         else
         {
             if (now >= nextAudio) { nextAudio = now.AddMilliseconds(400); float pk = AudioMeter.Peak(); musicHits = pk > 0.03f ? Math.Min(musicHits + 1, 6) : Math.Max(musicHits - 1, 0); }
-            sp.Dance = musicHits >= 3 && Cfg.Get("pet_dance", "1") == "1" && !speaking && !busy && !dragging;
+            sp.Dance = (musicHits >= 3 && Cfg.Get("pet_dance", "1") == "1" || now < danceUntil) && !speaking && !busy && !dragging;
             bool still = dragging || speaking || busy || bar.Visible || now < pausedUntil || sp.Dance;
             if (still) { sp.Moving = false; if (!dragging) target = null; }
             else if (target == null) { sp.Moving = false; if (now >= idleUntil) { var a = rnd.NextDouble() * Math.PI * 2; float r = Ui.D(150) + (float)rnd.NextDouble() * Ui.D(300); target = Clamp(new PointF(pos.X + MathF.Cos((float)a) * r, pos.Y + MathF.Sin((float)a) * r * 0.6f)); } }

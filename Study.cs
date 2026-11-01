@@ -53,7 +53,7 @@ static class Study
                       var due = p.Length > 1 ? p[1].Trim() : ""; if (due != "" && !DateTime.TryParse(due, out var dd)) return "I couldn't read the due date. Use year-month-day."; else if (due != "") due = DateTime.Parse(due).ToString("yyyy-MM-dd");
                       var sp = txt.IndexOf(' '); hw.Add(new Hw { Subj = sp > 0 ? txt[..sp] : txt, Text = sp > 0 ? txt[(sp + 1)..] : "", Due = due }); Save(hw, tt); return "Added: " + txt + (due != "" ? " (due " + due + ")" : ""); }
                 case "done":
-                    { var open = hw.Where(h => !h.Done).ToList(); if (int.TryParse(arg, out var n) && n >= 1 && n <= open.Count) { open[n - 1].Done = true; Save(hw, tt); return "Ticked off: " + open[n - 1].Subj + " " + open[n - 1].Text; } return "Tell me the number from the homework list."; }
+                    { var open = hw.Where(h => !h.Done).ToList(); if (int.TryParse(arg, out var n) && n >= 1 && n <= open.Count) { open[n - 1].Done = true; Save(hw, tt); Pet.React("🎉 Homework done! Great job, Boss!", 6, true); return "Ticked off: " + open[n - 1].Subj + " " + open[n - 1].Text; } return "Tell me the number from the homework list."; }
                 case "clear": hw.RemoveAll(h => h.Done); Save(hw, tt); return "Cleared the finished homework.";
                 default:
                     {
@@ -93,7 +93,7 @@ static class Study
                             if (due != "") { if (!DateTime.TryParse(due, out var dd)) return "I couldn't read that due date."; due = dd.ToString("yyyy-MM-dd"); }
                             hw.Add(new Hw { Subj = p[0].Trim(), Text = p[1].Trim(), Due = due }); Save(hw, LoadTt()); return "Added " + p[0].Trim() + ": " + p[1].Trim();
                         }
-                    case "toggle": if (int.TryParse(arg, out var n) && n >= 0 && n < hw.Count) { hw[n].Done = !hw[n].Done; Save(hw, LoadTt()); return hw[n].Done ? "Ticked off." : "Marked as not done."; } return "I couldn't find that homework.";
+                    case "toggle": if (int.TryParse(arg, out var n) && n >= 0 && n < hw.Count) { hw[n].Done = !hw[n].Done; Save(hw, LoadTt()); if (hw[n].Done) Pet.React("🎉 Homework done! Great job, Boss!", 6, true); return hw[n].Done ? "Ticked off." : "Marked as not done."; } return "I couldn't find that homework.";
                     case "del": if (int.TryParse(arg, out var d) && d >= 0 && d < hw.Count) { hw.RemoveAt(d); Save(hw, LoadTt()); return "Removed."; } return "I couldn't find that homework.";
                     case "clear": hw.RemoveAll(h => h.Done); Save(hw, LoadTt()); return "Cleared the finished homework.";
                     default: return "Unknown homework action.";
