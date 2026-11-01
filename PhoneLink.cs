@@ -1,13 +1,18 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 namespace UsbDesktop;
 
-// Phone link: the USB Link Android app sends commands through a small relay server; this loop fetches them,
-// runs them through the assistant (risky actions still ask on this PC) and sends the answer back.
+// Phone link: the USB Link Android app sends commands (and files) through a small relay server; this loop fetches them,
+// runs them through the assistant and sends the answer back. Risky actions ask on the PC AND on the phone (first answer wins).
+// It also publishes upcoming alarms and homework so the phone can ring its own notifications.
 static class PhoneLink
 {
+    public class Ctx { public string? AttachPath; }
+    public static Ctx? Current;                     // set while a phone command is running
     static CancellationTokenSource? cts;
-    static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(45) };
+    static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(60) };
+    static string baseUrl = "", pair = "";
     public static string Status = "Off";
 
     public static void Start(DesktopForm sh)
@@ -17,6 +22,7 @@ static class PhoneLink
         var url = Cfg.Get("phone_url").Trim().TrimEnd('/'); var code = Cfg.Get("phone_code").Trim();
         if (url == "" || code.Length < 8) { Status = "Add the server address and an 8+ character code"; return; }
         if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) url = "https://" + url;
+        baseUrl = url; pair = code;
         cts = new CancellationTokenSource(); _ = Loop(sh, url, code, cts.Token);
     }
     public static void Stop() { try { cts?.Cancel(); } catch { } cts = null; }
@@ -26,14 +32,99 @@ static class PhoneLink
         var r = new HttpRequestMessage(m, url); r.Headers.Add("x-pair", code);
         if (json != null) r.Content = new StringContent(json, Encoding.UTF8, "application/json"); return r;
     }
+    static async Task<JsonElement?> Api(HttpMethod m, string path, object? body = null)
+    {
+        try
+        {
+            using var req = Req(m, baseUrl + path, pair, body == null ? null : JsonSerializer.Serialize(body));
+            using var r = await http.SendAsync(req); var s = await r.Content.ReadAsStringAsync();
+            using var d = JsonDocument.Parse(s); return d.RootElement.Clone();
+        }
+        catch { return null; }
+    }
+
+    // ---- files from the phone
+    static string SaveIncoming(string name, string b64)
+    {
+        var dir = Path.Combine(Paths.Desktop, "Downloads"); Directory.CreateDirectory(dir);
+        var safe = string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)); if (safe.Trim() == "") safe = "file";
+        var p = Path.Combine(dir, safe); int n = 1;
+        while (File.Exists(p)) p = Path.Combine(dir, Path.GetFileNameWithoutExtension(safe) + " (" + (n++) + ")" + Path.GetExtension(safe));
+        File.WriteAllBytes(p, Convert.FromBase64String(b64)); return p;
+    }
+    // ---- files to the phone (used by the sendfile action)
+    public static string Attach(string rel)
+    {
+        if (Current == null) return "ERR: sendfile only works for requests that come from the phone.";
+        try
+        {
+            var full = Path.GetFullPath(Path.IsPathRooted(rel) ? rel : Path.Combine(Paths.Root, rel));
+            if (!full.StartsWith(Paths.Root, StringComparison.OrdinalIgnoreCase)) return "ERR: I can only send files that are on the USB.";
+            if (!File.Exists(full)) return "ERR: I couldn't find that file: " + rel;
+            if (new FileInfo(full).Length > 8 * 1024 * 1024) return "ERR: that file is over 8 MB.";
+            Current.AttachPath = full; return "Attached " + Path.GetFileName(full) + ". It arrives on the phone with your reply.";
+        }
+        catch (Exception ex) { return "ERR: " + ex.Message; }
+    }
+
+    // ---- approvals: ask on the PC and on the phone, first answer wins
+    public static bool Approve(string text)
+    {
+        if (Current == null || baseUrl == "") return MessageBox.Show(text, "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+        var id = Guid.NewGuid().ToString("N")[..10];
+        _ = Api(HttpMethod.Post, "/api/ask", new { id, text });
+        using var f = new Form { Text = "AI Assistant", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen, ClientSize = new Size(460, 190), MaximizeBox = false, MinimizeBox = false, ControlBox = false, TopMost = true };
+        var lbl = new Label { Text = text + "\n\n📱 Also sent to your phone: answer here or there.", Left = 14, Top = 12, Width = 430, Height = 120 };
+        var yes = new Button { Text = "Allow", Left = 14, Top = 140, Width = 130, Height = 36, DialogResult = DialogResult.Yes };
+        var no = new Button { Text = "Deny", Left = 316, Top = 140, Width = 130, Height = 36, DialogResult = DialogResult.No };
+        f.Controls.AddRange(new Control[] { lbl, yes, no }); f.AcceptButton = yes; f.CancelButton = no;
+        var t = new System.Windows.Forms.Timer { Interval = 1200 }; bool busy = false;
+        t.Tick += async (_, _) =>
+        {
+            if (busy) return; busy = true;
+            try
+            {
+                var j = await Api(HttpMethod.Get, "/api/answer?id=" + id);
+                if (j != null && j.Value.TryGetProperty("answer", out var a) && a.ValueKind != JsonValueKind.Null) f.DialogResult = a.GetBoolean() ? DialogResult.Yes : DialogResult.No;
+            }
+            catch { }
+            busy = false;
+        };
+        t.Start(); var r = f.ShowDialog(); t.Stop();
+        _ = Api(HttpMethod.Post, "/api/answer", new { id, allow = r == DialogResult.Yes }); // settles it for the phone (ignored if the phone answered first)
+        return r == DialogResult.Yes;
+    }
+
+    // ---- publish alarms and homework so the phone can schedule its own notifications
+    static async Task PostEvents()
+    {
+        try
+        {
+            var ev = new List<object>();
+            foreach (var t in Sched.Snapshot())
+                if (t.when.StartsWith("daily ") && t.action.StartsWith("remind:")) ev.Add(new { id = "t" + t.id, title = "⏰ Alarm", body = t.action[7..], time = t.when[6..], date = "", every = "day" });
+            var today = DateTime.Now.Date;
+            foreach (var h in Study.OpenHomework())
+            {
+                if (!DateTime.TryParseExact(h.due, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var due) || due < today) continue;
+                var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(h.subj + h.text + h.due)))[..8];
+                var body = (h.subj == "" ? "" : h.subj + ": ") + h.text;
+                ev.Add(new { id = "h" + key, title = "📚 Homework due today", body, time = "07:30", date = due.ToString("yyyy-MM-dd"), every = "" });
+                if (due.AddDays(-1) >= today) ev.Add(new { id = "p" + key, title = "📚 Homework due tomorrow", body, time = "18:00", date = due.AddDays(-1).ToString("yyyy-MM-dd"), every = "" });
+            }
+            await Api(HttpMethod.Post, "/api/events", new { events = ev });
+        }
+        catch { }
+    }
 
     static async Task Loop(DesktopForm sh, string url, string code, CancellationToken ct)
     {
-        Status = "Connecting…";
+        Status = "Connecting…"; var lastEv = DateTime.MinValue;
         while (!ct.IsCancellationRequested)
         {
             try
             {
+                if ((DateTime.Now - lastEv).TotalMinutes >= 5) { lastEv = DateTime.Now; _ = PostEvents(); }
                 using var resp = await http.SendAsync(Req(HttpMethod.Get, url + "/api/poll", code), ct);
                 var body = await resp.Content.ReadAsStringAsync(ct);
                 if (!resp.IsSuccessStatusCode) { Status = "Server said: " + body; await Task.Delay(8000, ct); continue; }
@@ -41,19 +132,44 @@ static class PhoneLink
                 using var doc = JsonDocument.Parse(body); var root = doc.RootElement;
                 if (!root.TryGetProperty("id", out var idEl)) continue;
                 string id = idEl.GetString() ?? "", text = root.GetProperty("text").GetString() ?? "";
-                var tcs = new TaskCompletionSource<string>();
-                sh.BeginInvoke(new Action(async () =>
+                string? savedPath = null;
+                if (root.TryGetProperty("file", out var fe) && fe.ValueKind == JsonValueKind.Object)
                 {
-                    try { if (!sh.DesktopSnapshot().Contains("AI Assistant")) sh.Launch("ai"); tcs.SetResult(await Assistant.Converse(sh, text, true, "📱 ")); }
-                    catch (Exception ex) { tcs.SetResult("I couldn't answer that: " + ex.Message); }
-                }));
-                var reply = await tcs.Task;
-                using var r2 = await http.SendAsync(Req(HttpMethod.Post, url + "/api/reply", code, JsonSerializer.Serialize(new { id, text = reply })), ct);
+                    try { savedPath = SaveIncoming(fe.GetProperty("name").GetString() ?? "file", fe.GetProperty("data").GetString() ?? ""); }
+                    catch (Exception ex) { await Reply(url, code, id, "I couldn't save that file: " + ex.Message, null, ct); continue; }
+                }
+                string reply; string? attach = null;
+                if (savedPath != null && text.Trim() == "")
+                {
+                    reply = "Saved " + Path.GetFileName(savedPath) + " to Downloads on the USB.";
+                    sh.BeginInvoke(new Action(() => sh.Toast("📱 Received " + Path.GetFileName(savedPath))));
+                }
+                else
+                {
+                    var prompt = savedPath != null ? text + "\n(The user also sent a file. It is saved on the USB at Desktop/Downloads/" + Path.GetFileName(savedPath) + ")" : text;
+                    var tcs = new TaskCompletionSource<(string, Ctx)>();
+                    sh.BeginInvoke(new Action(async () =>
+                    {
+                        var c = new Ctx(); Current = c;
+                        try { if (!sh.DesktopSnapshot().Contains("AI Assistant")) sh.Launch("ai"); tcs.SetResult((await Assistant.Converse(sh, prompt, true, "📱 "), c)); }
+                        catch (Exception ex) { tcs.SetResult(("I couldn't answer that: " + ex.Message, c)); }
+                        finally { Current = null; }
+                    }));
+                    var (r, ctx) = await tcs.Task; reply = r; attach = ctx.AttachPath;
+                }
+                await Reply(url, code, id, reply, attach, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch (Exception ex) { Status = "Can't reach the server: " + ex.Message; try { await Task.Delay(8000, ct); } catch { break; } }
         }
         Status = "Off";
+    }
+
+    static async Task Reply(string url, string code, string id, string text, string? attachPath, CancellationToken ct)
+    {
+        object? file = null;
+        if (attachPath != null) { try { file = new { name = Path.GetFileName(attachPath), data = Convert.ToBase64String(File.ReadAllBytes(attachPath)) }; } catch { } }
+        using var r2 = await http.SendAsync(Req(HttpMethod.Post, url + "/api/reply", code, JsonSerializer.Serialize(new { id, text, file })), ct);
     }
 
     // Small settings window

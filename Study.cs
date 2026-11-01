@@ -7,6 +7,7 @@ static class Study
 {
     static string F => Path.Combine(Paths.Data, "study.txt");
     class Hw { public string Subj = "", Text = "", Due = ""; public bool Done; }
+    public static List<(string subj, string text, string due)> OpenHomework() => LoadHw().Where(h => !h.Done && h.Due != "").Select(h => (h.Subj, h.Text, h.Due)).ToList();
     static List<Hw> LoadHw() => File.Exists(F) ? File.ReadAllLines(F).Where(l => l.StartsWith("hw|")).Select(l => l.Split('|')).Where(p => p.Length >= 5).Select(p => new Hw { Subj = p[1], Text = p[2], Due = p[3], Done = p[4] == "1" }).ToList() : new();
     static Dictionary<string, string> LoadTt() => File.Exists(F) ? File.ReadAllLines(F).Where(l => l.StartsWith("tt|")).Select(l => l.Split('|', 3)).Where(p => p.Length == 3).ToDictionary(p => p[1], p => p[2]) : new();
     static void Save(List<Hw> hw, Dictionary<string, string> tt)

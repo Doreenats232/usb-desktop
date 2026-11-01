@@ -15,6 +15,7 @@ static class Sched
     static List<TaskItem> tasks = Load();
     static System.Windows.Forms.Timer? timer; static DesktopForm? shell;
 
+    public static List<(string id, string when, string action)> Snapshot() => tasks.Where(t => t.On).Select(t => (t.Id, t.When, t.Action)).ToList();
     static List<TaskItem> Load() { try { if (File.Exists(File_)) return JsonSerializer.Deserialize<List<TaskItem>>(File.ReadAllText(File_)) ?? new(); } catch { } return new(); }
     static void Save() { try { Directory.CreateDirectory(Path.GetDirectoryName(File_)!); File.WriteAllText(File_, JsonSerializer.Serialize(tasks)); } catch { } }
 
