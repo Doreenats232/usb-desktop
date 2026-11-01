@@ -44,7 +44,7 @@ static class PhoneLink
                 var tcs = new TaskCompletionSource<string>();
                 sh.BeginInvoke(new Action(async () =>
                 {
-                    try { tcs.SetResult(await Assistant.Converse(sh, text, true)); }
+                    try { if (!sh.DesktopSnapshot().Contains("AI Assistant")) sh.Launch("ai"); tcs.SetResult(await Assistant.Converse(sh, text, true, "📱 ")); }
                     catch (Exception ex) { tcs.SetResult("I couldn't answer that: " + ex.Message); }
                 }));
                 var reply = await tcs.Task;

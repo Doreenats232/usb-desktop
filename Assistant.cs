@@ -157,11 +157,17 @@ static class Assistant
     }
 
     // One full conversation turn (used by the chat window and by the walking character).
-    public static async Task<string> Converse(DesktopForm sh, string text, bool fromPet)
+    public static event Action<bool>? Busy;
+    public static async Task<string> Converse(DesktopForm sh, string text, bool fromPet, string label = "")
+    {
+        if (fromPet) Busy?.Invoke(true);
+        try { return await ConverseCore(sh, text, fromPet, label); } finally { if (fromPet) Busy?.Invoke(false); }
+    }
+    static async Task<string> ConverseCore(DesktopForm sh, string text, bool fromPet, string label)
     {
         string url = Cfg.Get("ai_url", DefUrl), key = Cfg.Get("ai_key"), model = Cfg.Get("ai_model");
         if (url == "" || key == "") throw new Exception("Add your RelayAPI key in the assistant's Settings first.");
-        H.Add(new() { ["role"] = "user", ["content"] = text }); string clean = ""; if (fromPet) Message?.Invoke(true, text);
+        H.Add(new() { ["role"] = "user", ["content"] = text }); string clean = ""; if (fromPet) Message?.Invoke(true, label + text);
         try
         {
             if (model == "") { model = await Net.FirstModel(url, key); if (model == "") throw new Exception("No provider found in RelayAPI. Add one in its dashboard."); }
@@ -359,6 +365,8 @@ static class Assistant
 
         Action<bool, string> onMsg = (user, t) => { try { root.BeginInvoke(new Action(() => { if (!root.IsDisposed) chat.Add(user, t); })); } catch { } };
         Assistant.Message += onMsg; root.Disposed += (_, _) => Assistant.Message -= onMsg;
+        Action<bool> onBusy = on => { try { root.BeginInvoke(new Action(() => { if (root.IsDisposed) return; chat.SetTyping(on ? "···" : null); Mode(on ? 1 : 0, on ? "Thinking…" : "Online"); })); } catch { } };
+        Assistant.Busy += onBusy; root.Disposed += (_, _) => Assistant.Busy -= onBusy;
         foreach (var h in hist.TakeLast(40)) chat.Items.Add((h["role"] == "user", h["content"]));
         if (hist.Count == 0) chat.Items.Add((false, "Hi! I can chat, open apps, save notes and talk out loud. Press Settings once and add your RelayAPI key. Press Talk to speak with me."));
         chat.ToEnd();
