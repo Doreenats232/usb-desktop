@@ -48,6 +48,9 @@ static class Quick
                         if (a == "") return "Nothing to copy.";
                         Clipboard.SetText(a); return "Copied to the PC clipboard (" + a.Length + " characters).";
                     }
+                case "study": _ = PhoneLink.PostStudy(); return "Study list refreshed.";
+                case "hw": { var r = Study.PhoneAction("hw", a); _ = PhoneLink.PostStudy(); _ = PhoneLink.PostEvents(); return r; }
+                case "lesson": { var r = Study.PhoneAction("lesson", a); _ = PhoneLink.PostStudy(); _ = PhoneLink.PostEvents(); return r; }
                 case "status": return Status(sh);
                 case "screen":
                     {

@@ -88,7 +88,7 @@ static class Sched
     }
 
     // Real alarm: loud beeping and a window on top until you press OK.
-    static void Ring(DesktopForm sh, string text)
+    public static void Ring(DesktopForm sh, string text)
     {
         bool stop = false;
         var th = new System.Threading.Thread(() => { while (!stop) { try { Console.Beep(880, 350); Console.Beep(660, 350); } catch { SystemSounds.Exclamation.Play(); System.Threading.Thread.Sleep(700); } } }) { IsBackground = true };

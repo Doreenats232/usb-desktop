@@ -102,7 +102,12 @@ static class PhoneLink
     }
 
     // ---- publish alarms and homework so the phone can schedule its own notifications
-    static async Task PostEvents()
+    public static async Task PostStudy()
+    {
+        try { if (baseUrl != "") await Api(HttpMethod.Post, "/api/study", Study.Snapshot()); } catch { }
+    }
+
+    public static async Task PostEvents()
     {
         try
         {
@@ -118,6 +123,19 @@ static class PhoneLink
                 ev.Add(new { id = "h" + key, title = "📚 Homework due today", body, time = "07:30", date = due.ToString("yyyy-MM-dd"), every = "" });
                 if (due.AddDays(-1) >= today) ev.Add(new { id = "p" + key, title = "📚 Homework due tomorrow", body, time = "18:00", date = due.AddDays(-1).ToString("yyyy-MM-dd"), every = "" });
             }
+            // weekly lesson alarms for the phone (the PC rings its own)
+            if (Cfg.Get("lesson_alarm", "1") == "1")
+            {
+                int lead = int.TryParse(Cfg.Get("lesson_lead", "5"), out var ln) && ln >= 1 && ln <= 60 ? ln : 5;
+                string[] days = { "sun", "mon", "tue", "wed", "thu", "fri", "sat" };
+                foreach (var l in Study.LessonsList())
+                {
+                    int di = Array.IndexOf(days, l.day); if (di < 0 || !TimeSpan.TryParse(l.time, out var ts)) continue;
+                    var at = ts - TimeSpan.FromMinutes(lead); if (at < TimeSpan.Zero) { at += TimeSpan.FromHours(24); di = (di + 6) % 7; }
+                    var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(l.day + l.time + l.subj)))[..8];
+                    ev.Add(new { id = "l" + key, title = "📚 " + l.subj + " in " + lead + " min", body = l.day.ToUpper() + " " + l.time, time = at.ToString(@"hh\:mm"), date = "", every = "week", weekday = di + 1 });
+                }
+            }
             await Api(HttpMethod.Post, "/api/events", new { events = ev });
         }
         catch { }
@@ -130,7 +148,7 @@ static class PhoneLink
         {
             try
             {
-                if ((DateTime.Now - lastEv).TotalMinutes >= 5) { lastEv = DateTime.Now; _ = PostEvents(); }
+                if ((DateTime.Now - lastEv).TotalMinutes >= 5) { lastEv = DateTime.Now; _ = PostEvents(); _ = PostStudy(); }
                 using var resp = await http.SendAsync(Req(HttpMethod.Get, url + "/api/poll", code), ct);
                 var body = await resp.Content.ReadAsStringAsync(ct);
                 if (!resp.IsSuccessStatusCode) { Status = "Server said: " + body; await Task.Delay(8000, ct); continue; }

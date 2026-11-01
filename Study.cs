@@ -10,9 +10,13 @@ static class Study
     public static List<(string subj, string text, string due)> OpenHomework() => LoadHw().Where(h => !h.Done && h.Due != "").Select(h => (h.Subj, h.Text, h.Due)).ToList();
     static List<Hw> LoadHw() => File.Exists(F) ? File.ReadAllLines(F).Where(l => l.StartsWith("hw|")).Select(l => l.Split('|')).Where(p => p.Length >= 5).Select(p => new Hw { Subj = p[1], Text = p[2], Due = p[3], Done = p[4] == "1" }).ToList() : new();
     static Dictionary<string, string> LoadTt() => File.Exists(F) ? File.ReadAllLines(F).Where(l => l.StartsWith("tt|")).Select(l => l.Split('|', 3)).Where(p => p.Length == 3).ToDictionary(p => p[1], p => p[2]) : new();
-    static void Save(List<Hw> hw, Dictionary<string, string> tt)
+    public class Lesson { public string Day = "", Time = "", Subj = ""; }
+    static List<Lesson> LoadLessons() => File.Exists(F) ? File.ReadAllLines(F).Where(l => l.StartsWith("ls|")).Select(l => l.Split('|')).Where(p => p.Length >= 4).Select(p => new Lesson { Day = p[1], Time = p[2], Subj = p[3] }).ToList() : new();
+    public static List<(string day, string time, string subj)> LessonsList() => LoadLessons().Select(l => (l.Day, l.Time, l.Subj)).ToList();
+    static void Save(List<Hw> hw, Dictionary<string, string> tt) => Save(hw, tt, LoadLessons());
+    static void Save(List<Hw> hw, Dictionary<string, string> tt, List<Lesson> ls)
     {
-        var lines = hw.Select(h => "hw|" + h.Subj.Replace('|', '/') + "|" + h.Text.Replace('|', '/') + "|" + h.Due + "|" + (h.Done ? "1" : "0")).Concat(tt.Select(k => "tt|" + k.Key + "|" + k.Value.Replace('|', '/')));
+        var lines = hw.Select(h => "hw|" + h.Subj.Replace('|', '/') + "|" + h.Text.Replace('|', '/') + "|" + h.Due + "|" + (h.Done ? "1" : "0")).Concat(tt.Select(k => "tt|" + k.Key + "|" + k.Value.Replace('|', '/'))).Concat(ls.Select(l => "ls|" + l.Day + "|" + l.Time + "|" + l.Subj.Replace('|', '/')));
         Directory.CreateDirectory(Paths.Data); File.WriteAllLines(F, lines);
     }
     static string Day(string s)
@@ -62,6 +66,87 @@ static class Study
         }
         catch (Exception ex) { return kind + " failed: " + ex.Message; }
     }
+    // ---- phone app: study tab (snapshot + edits) and lesson alarms ----
+    public static object Snapshot() => new
+    {
+        hw = LoadHw().Select((h, i) => new { i, subj = h.Subj, text = h.Text, due = h.Due, done = h.Done }).ToList(),
+        lessons = LoadLessons().Select((l, i) => new { i, day = l.Day, time = l.Time, subj = l.Subj }).ToList(),
+        alarm = Cfg.Get("lesson_alarm", "1") == "1", lead = LeadMin()
+    };
+    static int LeadMin() => int.TryParse(Cfg.Get("lesson_lead", "5"), out var n) && n >= 1 && n <= 60 ? n : 5;
+
+    // kind "hw": add Subject|Task|YYYY-MM-DD, toggle N, del N, clear.  kind "lesson": add day|HH:mm|Subject, del N, alarm on|off [minutes]
+    public static string PhoneAction(string kind, string a)
+    {
+        try
+        {
+            var i = a.IndexOf(' '); var cmd = (i > 0 ? a[..i] : a).Trim().ToLowerInvariant(); var arg = i > 0 ? a[(i + 1)..].Trim() : "";
+            if (kind == "hw")
+            {
+                var hw = LoadHw();
+                switch (cmd)
+                {
+                    case "add":
+                        {
+                            var p = arg.Split('|'); if (p.Length < 2 || p[1].Trim() == "") return "Add needs a subject and a task.";
+                            var due = p.Length > 2 ? p[2].Trim() : "";
+                            if (due != "") { if (!DateTime.TryParse(due, out var dd)) return "I couldn't read that due date."; due = dd.ToString("yyyy-MM-dd"); }
+                            hw.Add(new Hw { Subj = p[0].Trim(), Text = p[1].Trim(), Due = due }); Save(hw, LoadTt()); return "Added " + p[0].Trim() + ": " + p[1].Trim();
+                        }
+                    case "toggle": if (int.TryParse(arg, out var n) && n >= 0 && n < hw.Count) { hw[n].Done = !hw[n].Done; Save(hw, LoadTt()); return hw[n].Done ? "Ticked off." : "Marked as not done."; } return "I couldn't find that homework.";
+                    case "del": if (int.TryParse(arg, out var d) && d >= 0 && d < hw.Count) { hw.RemoveAt(d); Save(hw, LoadTt()); return "Removed."; } return "I couldn't find that homework.";
+                    case "clear": hw.RemoveAll(h => h.Done); Save(hw, LoadTt()); return "Cleared the finished homework.";
+                    default: return "Unknown homework action.";
+                }
+            }
+            var ls = LoadLessons();
+            switch (cmd)
+            {
+                case "add":
+                    {
+                        var p = arg.Split('|'); if (p.Length < 3) return "A lesson needs a day, a time and a subject.";
+                        var day = Day(p[0]); if (day == "") return "I couldn't read that day.";
+                        if (!TimeSpan.TryParse(p[1].Trim(), out var ts) || ts.TotalHours >= 24) return "I couldn't read that time.";
+                        var subj = p[2].Trim(); if (subj == "") return "A lesson needs a subject.";
+                        ls.Add(new Lesson { Day = day, Time = ts.ToString(@"hh\:mm"), Subj = subj }); Save(LoadHw(), LoadTt(), ls); return "Added " + subj + " on " + day.ToUpper() + " at " + ts.ToString(@"hh\:mm") + ".";
+                    }
+                case "del": if (int.TryParse(arg, out var n) && n >= 0 && n < ls.Count) { ls.RemoveAt(n); Save(LoadHw(), LoadTt(), ls); return "Lesson removed."; } return "I couldn't find that lesson.";
+                case "alarm":
+                    {
+                        var p = arg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        if (p.Length > 0) Cfg.Set("lesson_alarm", p[0].ToLowerInvariant() == "on" ? "1" : "0");
+                        if (p.Length > 1 && int.TryParse(p[1], out var m) && m >= 1 && m <= 60) Cfg.Set("lesson_lead", m.ToString());
+                        return Cfg.Get("lesson_alarm", "1") == "1" ? "Lesson alarms on (" + LeadMin() + " min before)." : "Lesson alarms off.";
+                    }
+                default: return "Unknown lesson action.";
+            }
+        }
+        catch (Exception ex) { return "That didn't work: " + ex.Message; }
+    }
+
+    // Rings on the PC a few minutes before each lesson (the phone gets its own notification through the events sync)
+    static readonly HashSet<string> rung = new();
+    public static void StartAlarms(DesktopForm sh)
+    {
+        var t = new System.Windows.Forms.Timer { Interval = 20000 };
+        t.Tick += (_, _) =>
+        {
+            try
+            {
+                if (Cfg.Get("lesson_alarm", "1") != "1") return;
+                var now = DateTime.Now; var today = now.ToString("ddd", System.Globalization.CultureInfo.InvariantCulture).ToLowerInvariant()[..3];
+                foreach (var l in LoadLessons())
+                {
+                    if (l.Day != today || !TimeSpan.TryParse(l.Time, out var ts)) continue;
+                    var at = now.Date + ts - TimeSpan.FromMinutes(LeadMin()); var key = l.Day + l.Time + l.Subj + now.ToString("yyyyMMdd");
+                    if (now >= at && now < at.AddMinutes(2) && rung.Add(key)) Sched.Ring(sh, "📚 " + l.Subj + " starts in " + LeadMin() + " minutes (" + l.Time + ")");
+                }
+            }
+            catch { }
+        };
+        t.Start();
+    }
+
     // ---- StudyFeed (your live site): today's quiz questions, answers on request, simple explanations ----
     const string FeedUrl = "https://studyfeed-6v3c.onrender.com";
     static List<(string id, string subj, string text)> lastFeed = new();
