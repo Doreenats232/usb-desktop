@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text.Json;
 namespace UsbDesktop;
 
@@ -6,12 +7,18 @@ static class Updater
 {
     const string Repo = "Doreenats232/usb-desktop";
     public static int Cur => typeof(Updater).Assembly.GetName().Version?.Build ?? 0;
+    static long expSize = 0; static string expSha = "";   // what GitHub says the new Launcher.exe must be
     public static async Task<(int latest, string url)> Check()
     {
         var j = JsonDocument.Parse(await Net.Text($"https://api.github.com/repos/{Repo}/releases/latest")).RootElement;
         var tag = j.GetProperty("tag_name").GetString() ?? "v0"; int n = int.Parse(tag[(tag.LastIndexOf('.') + 1)..]);
         foreach (var a in j.GetProperty("assets").EnumerateArray())
-            if (a.GetProperty("name").GetString() == "Launcher.exe") return (n, a.GetProperty("browser_download_url").GetString()!);
+            if (a.GetProperty("name").GetString() == "Launcher.exe")
+            {
+                expSize = a.TryGetProperty("size", out var sz) && sz.TryGetInt64(out var szv) ? szv : 0;
+                expSha = a.TryGetProperty("digest", out var dg) && dg.ValueKind == JsonValueKind.String ? (dg.GetString() ?? "") : "";
+                return (n, a.GetProperty("browser_download_url").GetString()!);
+            }
         return (0, "");
     }
 
@@ -23,11 +30,18 @@ static class Updater
         var tmp = Path.Combine(Paths.Root, "Launcher.new");
         try
         {
+            try { File.Delete(tmp); File.Delete(tmp + ".part"); } catch { }   // never resume a leftover half-download from an older version
             await Net.Download(url, tmp, dlg.Report, CancellationToken.None);
             dlg.Stage("Checking the download…", 100);
-            var fi = new FileInfo(tmp); bool ok = fi.Length > 5_000_000;
+            var fi = new FileInfo(tmp); bool ok = fi.Length > 5_000_000 && (expSize <= 0 || fi.Length == expSize);
             if (ok) { using var s = File.OpenRead(tmp); ok = s.ReadByte() == 'M' && s.ReadByte() == 'Z'; }
-            if (!ok) { try { File.Delete(tmp); } catch { } dlg.Fail("The downloaded file was damaged. Please try again."); await Task.Delay(1000); dlg.Visible = true; await WaitClosed(dlg); return; }
+            if (ok && expSha.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+            {
+                dlg.Stage("Verifying the download…", 100);
+                string hex; using (var hs = File.OpenRead(tmp)) hex = Convert.ToHexString(await SHA256.HashDataAsync(hs));
+                ok = hex.Equals(expSha[7..], StringComparison.OrdinalIgnoreCase);
+            }
+            if (!ok) { try { File.Delete(tmp); } catch { } dlg.Fail("The downloaded file was damaged, so I kept your working version. Please try again."); await Task.Delay(1000); dlg.Visible = true; await WaitClosed(dlg); return; }
             dlg.Stage("Installing… restarting in a moment", 100); await Task.Delay(900);
             var exe = Path.GetFileName(Environment.ProcessPath)!;
             File.WriteAllText(Path.Combine(Paths.Root, "update.bat"),
