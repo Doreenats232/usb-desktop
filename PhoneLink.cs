@@ -8,11 +8,12 @@ namespace UsbDesktop;
 // It also publishes upcoming alarms and homework so the phone can ring its own notifications.
 static class PhoneLink
 {
-    public class Ctx { public string? AttachPath; }
+    public class Ctx { public string? AttachPath, AttachName; public byte[]? AttachBytes; }
     public static Ctx? Current;                     // set while a phone command is running
     static CancellationTokenSource? cts;
     static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(60) };
     static string baseUrl = "", pair = "";
+    static DesktopForm? shell;
     public static string Status = "Off";
 
     public static void Start(DesktopForm sh)
@@ -22,7 +23,7 @@ static class PhoneLink
         var url = Cfg.Get("phone_url").Trim().TrimEnd('/'); var code = Cfg.Get("phone_code").Trim();
         if (url == "" || code.Length < 8) { Status = "Add the server address and an 8+ character code"; return; }
         if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) url = "https://" + url;
-        baseUrl = url; pair = code;
+        baseUrl = url; pair = code; shell = sh;
         cts = new CancellationTokenSource(); _ = Loop(sh, url, code, cts.Token);
     }
     public static void Stop() { try { cts?.Cancel(); } catch { } cts = null; }
@@ -58,6 +59,11 @@ static class PhoneLink
         if (Current == null) return "ERR: sendfile only works for requests that come from the phone.";
         try
         {
+            if (rel.Trim().ToLowerInvariant() == "screen")
+            {
+                var jpg = shell?.ShotJpeg(); if (jpg == null) return "ERR: I couldn't capture the screen.";
+                Current.AttachName = "screen.jpg"; Current.AttachBytes = jpg; return "Attached a screenshot. It arrives on the phone with your reply.";
+            }
             var full = Path.GetFullPath(Path.IsPathRooted(rel) ? rel : Path.Combine(Paths.Root, rel));
             if (!full.StartsWith(Paths.Root, StringComparison.OrdinalIgnoreCase)) return "ERR: I can only send files that are on the USB.";
             if (!File.Exists(full)) return "ERR: I couldn't find that file: " + rel;
@@ -138,11 +144,18 @@ static class PhoneLink
                     try { savedPath = SaveIncoming(fe.GetProperty("name").GetString() ?? "file", fe.GetProperty("data").GetString() ?? ""); }
                     catch (Exception ex) { await Reply(url, code, id, "I couldn't save that file: " + ex.Message, null, ct); continue; }
                 }
-                string reply; string? attach = null;
+                string reply; Ctx? rctx = null;
                 if (savedPath != null && text.Trim() == "")
                 {
                     reply = "Saved " + Path.GetFileName(savedPath) + " to Downloads on the USB.";
                     sh.BeginInvoke(new Action(() => sh.Toast("📱 Received " + Path.GetFileName(savedPath))));
+                }
+                else if (text.StartsWith("/"))
+                {
+                    // quick action from the phone grid: run directly, no AI
+                    var qt = new TaskCompletionSource<(string, Ctx)>();
+                    sh.BeginInvoke(new Action(() => { var c = new Ctx(); string r; try { r = Quick.Run(sh, text, c); } catch (Exception ex) { r = "That didn't work: " + ex.Message; } qt.SetResult((r, c)); }));
+                    var (qr, qc) = await qt.Task; reply = qr; rctx = qc;
                 }
                 else
                 {
@@ -155,9 +168,9 @@ static class PhoneLink
                         catch (Exception ex) { tcs.SetResult(("I couldn't answer that: " + ex.Message, c)); }
                         finally { Current = null; }
                     }));
-                    var (r, ctx) = await tcs.Task; reply = r; attach = ctx.AttachPath;
+                    var (r, ctx) = await tcs.Task; reply = r; rctx = ctx;
                 }
-                await Reply(url, code, id, reply, attach, ct);
+                await Reply(url, code, id, reply, rctx, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch (Exception ex) { Status = "Can't reach the server: " + ex.Message; try { await Task.Delay(8000, ct); } catch { break; } }
@@ -165,10 +178,15 @@ static class PhoneLink
         Status = "Off";
     }
 
-    static async Task Reply(string url, string code, string id, string text, string? attachPath, CancellationToken ct)
+    static async Task Reply(string url, string code, string id, string text, Ctx? ctx, CancellationToken ct)
     {
         object? file = null;
-        if (attachPath != null) { try { file = new { name = Path.GetFileName(attachPath), data = Convert.ToBase64String(File.ReadAllBytes(attachPath)) }; } catch { } }
+        try
+        {
+            if (ctx?.AttachBytes != null) file = new { name = ctx.AttachName ?? "file", data = Convert.ToBase64String(ctx.AttachBytes) };
+            else if (ctx?.AttachPath != null) file = new { name = Path.GetFileName(ctx.AttachPath), data = Convert.ToBase64String(File.ReadAllBytes(ctx.AttachPath)) };
+        }
+        catch { }
         using var r2 = await http.SendAsync(Req(HttpMethod.Post, url + "/api/reply", code, JsonSerializer.Serialize(new { id, text, file })), ct);
     }
 

@@ -271,6 +271,24 @@ class DesktopForm : Form
         foreach (var c in cards) { y -= c.Height + Ui.D(10); c.Location = new Point(Width - c.Width - Ui.D(16), y); c.BringToFront(); }
     }
 
+    // A small JPEG of the whole PC screen (used by the phone link)
+    public byte[]? ShotJpeg(int maxW = 1280)
+    {
+        try
+        {
+            toast.Visible = false; Application.DoEvents();
+            var r = Screen.PrimaryScreen!.Bounds;
+            using var bm = new Bitmap(r.Width, r.Height);
+            using (var g = Graphics.FromImage(bm)) g.CopyFromScreen(r.Location, Point.Empty, r.Size);
+            int w = Math.Min(maxW, r.Width), h = Math.Max(1, r.Height * w / r.Width);
+            using var sm = new Bitmap(bm, new Size(w, h)); using var ms = new MemoryStream();
+            var enc = ImageCodecInfo.GetImageEncoders().First(e => e.MimeType == "image/jpeg");
+            var pr = new EncoderParameters(1); pr.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 70L);
+            sm.Save(ms, enc, pr); return ms.ToArray();
+        }
+        catch { return null; }
+    }
+
     public void Shot()
     {
         HideMenu(); toast.Visible = false; Application.DoEvents(); Thread.Sleep(150);

@@ -27,6 +27,12 @@ static class SysVolume
         var iid = typeof(IAudioEndpointVolume).GUID; dev.Activate(ref iid, 23, IntPtr.Zero, out var o); return (IAudioEndpointVolume)o;
     }
 
+    public static int Get()
+    {
+        try { var v = Endpoint(); v.GetMasterVolumeLevelScalar(out var cur); v.GetMute(out var m); return m ? 0 : (int)Math.Round(cur * 100); }
+        catch { return -1; }
+    }
+
     // arg: a number 0-100, "up", "down", "mute" or "unmute"
     public static string Do(string arg)
     {
