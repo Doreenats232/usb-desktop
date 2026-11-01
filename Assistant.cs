@@ -240,7 +240,7 @@ static class Assistant
             try
             {
                 if (k == "open" && Apps.Contains(a.ToLowerInvariant())) sh.Launch(a.ToLowerInvariant());
-                else if (k == "web" && a.StartsWith("http", StringComparison.OrdinalIgnoreCase)) sh.Launch("web", a);
+                else if (k == "web" && a.StartsWith("http", StringComparison.OrdinalIgnoreCase)) BrowserCtl.OpenSmart(sh, a);
                 else if (k == "remember" && a != "") { Directory.CreateDirectory(Dir); File.AppendAllText(MemFile, a.Replace("\n", " ") + "\n"); }
                 else if (k == "note")
                 {

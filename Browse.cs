@@ -29,16 +29,61 @@ static class BrowserCtl
         return "https://www.google.com/search?q=" + Uri.EscapeDataString(a);
     }
 
+    static string HostOf(string u) { try { return new Uri(u).Host.Replace("www.", ""); } catch { return ""; } }
+
+    // Wait for the browser window that already exists (it can take a while to start) instead of opening another one.
+    static async Task<CoreWebView2?> WaitCore(DesktopForm sh, int ms)
+    {
+        var end = DateTime.UtcNow.AddMilliseconds(ms);
+        while (DateTime.UtcNow < end) { var c = sh.ActiveBrowser()?.Core(); if (c != null) return c; await Task.Delay(300); }
+        return null;
+    }
+
+    // Open a page without ever stacking duplicates: reuse a browser that is open or still starting.
+    // A new window is opened only when there is none, or when the existing one never came up (truly failed).
+    public static void OpenSmart(DesktopForm sh, string url)
+    {
+        var b = sh.ActiveBrowser();
+        if (b == null) { sh.Launch("web", url); return; }
+        var host = HostOf(url);
+        if (host != "" && b.Urls().Any(u => HostOf(u) == host)) return; // already open or loading there
+        if (b.Core() != null) { b.Open(url); return; }
+        _ = OpenWhenReady(sh, url);
+    }
+    static async Task OpenWhenReady(DesktopForm sh, string url)
+    {
+        var c = await WaitCore(sh, 25000);
+        var b = sh.ActiveBrowser();
+        if (c != null && b != null) { var host = HostOf(url); if (host == "" || !b.Urls().Any(u => HostOf(u) == host)) b.Open(url); return; }
+        sh.Launch("web", url); // the first browser never started: only now open a new one
+    }
+
     public static async Task<string> Do(DesktopForm sh, string kind, string arg, bool trust, Func<string, bool> confirm)
     {
         try
         {
             var c = sh.ActiveBrowser()?.Core();
-            if (kind == "goto") { if (c == null) { sh.Launch("web", ToUrl(arg)); return ""; } c.Navigate(ToUrl(arg)); return ""; }
+            if (kind == "goto")
+            {
+                if (c == null)
+                {
+                    if (sh.ActiveBrowser() != null) c = await WaitCore(sh, 25000); // a browser is already starting: wait for it
+                    if (c == null) { sh.Launch("web", ToUrl(arg)); return ""; }   // none, or the first one truly failed
+                }
+                c.Navigate(ToUrl(arg)); return "";
+            }
             if (kind == "play")
             {
                 var url = "https://www.youtube.com/results?search_query=" + Uri.EscapeDataString(arg);
-                if (c == null) { sh.Launch("web", url); await Task.Delay(5000); c = sh.ActiveBrowser()?.Core(); if (c == null) return "ERR: the browser didn't open."; }
+                if (c == null)
+                {
+                    bool had = sh.ActiveBrowser() != null;
+                    if (!had) sh.Launch("web", url);                       // no browser at all: open one (on the results page)
+                    c = await WaitCore(sh, 25000);                          // wait for the browser we have; do NOT open a second one
+                    if (c == null && had) { sh.Launch("web", url); c = await WaitCore(sh, 20000); } // the first truly failed: try once more
+                    if (c == null) return "ERR: the browser didn't open.";
+                    if (had) await NavigateAndWait(c, url); else await Task.Delay(2500);
+                }
                 else await NavigateAndWait(c, url);
                 string r = ""; for (int i = 0; i < 8 && r != "clicked"; i++) { await Task.Delay(1000); r = await Js(c, "(function(){var a=document.querySelector('ytd-video-renderer a#video-title, a#video-title');if(a){a.click();return 'clicked';}return '';})()"); }
                 if (r != "clicked") return "ERR: I couldn't find a video to play on YouTube.";
