@@ -172,7 +172,7 @@ static class PhoneLink
                 {
                     // quick action from the phone grid: run directly, no AI
                     var qt = new TaskCompletionSource<(string, Ctx)>();
-                    sh.BeginInvoke(new Action(() => { var c = new Ctx(); string r; try { r = Quick.Run(sh, text, c); } catch (Exception ex) { r = "That didn't work: " + ex.Message; } qt.SetResult((r, c)); }));
+                    sh.BeginInvoke(new Action(async () => { var c = new Ctx(); string r; try { r = await Quick.RunAsync(sh, text, c); } catch (Exception ex) { r = "That didn't work: " + ex.Message; } qt.SetResult((r, c)); }));
                     var (qr, qc) = await qt.Task; reply = qr; rctx = qc;
                 }
                 else

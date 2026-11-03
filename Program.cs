@@ -8,7 +8,15 @@ namespace UsbDesktop;
 static class Paths
 {
     public static readonly string Root = Path.GetDirectoryName(Environment.ProcessPath)!;
-    public static readonly string Desktop = Path.Combine(Root, "Desktop"), Apps = Path.Combine(Root, "apps"), Data = Path.Combine(Root, "data"), Vm = Path.Combine(Root, "vm");
+    // "--profile NAME" on the command line picks another person's folders; no argument means the original ("main") profile
+    public static readonly string Profile = ReadProfile();
+    static string ReadProfile()
+    {
+        try { var a = Environment.GetCommandLineArgs(); for (int i = 1; i < a.Length - 1; i++) if (a[i] == "--profile") return new string(a[i + 1].Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_').ToArray()); } catch { }
+        return "";
+    }
+    static readonly string PRoot = Profile == "" ? Root : Path.Combine(Root, "profiles", Profile);
+    public static readonly string Desktop = Path.Combine(PRoot, "Desktop"), Apps = Path.Combine(Root, "apps"), Data = Path.Combine(PRoot, "data"), Vm = Path.Combine(Root, "vm");
     public static readonly string Bin = Path.Combine(Data, "Recycle"), Shots = Path.Combine(Desktop, "Screenshots");
 }
 

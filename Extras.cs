@@ -15,6 +15,9 @@ static class GetApps
         new("KeePassXC", "keepassxreboot/keepassxc", @"^KeePassXC-[\d.]+-Win64\.zip$", "KeePassXC.exe", "Offline password manager"),
         new("Rufus", "pbatard/rufus", @"^rufus-[\d.]+p\.exe$", "", "Make bootable USB drives"),
         new("Ventoy", "ventoy/Ventoy", @"^ventoy-[\d.]+-windows\.zip$", "", "Boot many ISOs from one USB"),
+        new("VSCodium", "VSCodium/vscodium", @"^VSCodium-win32-x64-[\d.]+\.zip$", "VSCodium.exe", "Full code editor (VS Code without tracking), big download"),
+        new("Flameshot", "flameshot-org/flameshot", @"^flameshot-[\d.]+-win64\.zip$", "flameshot.exe", "Screenshot tool with drawing and arrows"),
+        new("OBS Studio", "obsproject/obs-studio", @"^OBS-Studio-[\d.]+-Windows-x64\.zip$", "obs64.exe", "Screen recording and streaming, big download"),
         new("yt-dlp", "yt-dlp/yt-dlp", @"^yt-dlp\.exe$", "", "Video downloader (command line, opens its folder)"),
     };
 
@@ -56,6 +59,7 @@ static class GetApps
         var dir = DirOf(it); Directory.CreateDirectory(dir); var file = Path.Combine(dir, Path.GetFileName(new Uri(url).AbsolutePath));
         await Net.Download(url, file, (g, t, s) => { try { if (!b.IsDisposed) b.BeginInvoke(new Action(() => b.Text = t > 0 ? (int)(100.0 * g / t) + "%" : Ui.Bytes(g))); } catch { } }, CancellationToken.None);
         if (file.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) { ZipFile.ExtractToDirectory(file, dir, true); File.Delete(file); }
+        if (it.Name == "OBS Studio") { try { File.WriteAllText(Path.Combine(dir, "portable_mode.txt"), ""); } catch { } }   // keeps OBS settings on the USB
     }
 
     static void Open(Item it)

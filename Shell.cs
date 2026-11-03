@@ -151,7 +151,7 @@ class DesktopForm : Form
     static readonly (string N, string K)[] Catalog =
     {
         ("Files", "files"), ("Full OS", "vm"), ("Notepad", "notepad"), ("Code Editor", "code"), ("Calculator", "calc"), ("Paint", "paint"), ("Terminal", "term"), ("Settings", "settings"),
-        ("Browser", "web"), ("Screenshot", "shot"), ("Recycle Bin", "bin"), ("MLD Store", "store"), ("Task Manager", "tm"), ("Vault", "vault"), ("AI Assistant", "ai"), ("Get Apps", "getapps"), ("Games", "games"),
+        ("Browser", "web"), ("Screenshot", "shot"), ("Recycle Bin", "bin"), ("MLD Store", "store"), ("Task Manager", "tm"), ("Vault", "vault"), ("AI Assistant", "ai"), ("Get Apps", "getapps"), ("Games", "games"), ("To-do", "todo"),
     };
     public static string IconKey(string k) => k switch { "files" => "folder", "web" => "browser", _ => k };
     static readonly string[] OnDesk = { "files", "web", "store", "ai", "vm", "vault", "bin", "settings", "notepad", "calc", "paint", "term" };
@@ -191,7 +191,7 @@ class DesktopForm : Form
         Shown += async (_, _) =>
         {
             var sp = new Splash(ClientSize); Controls.Add(sp); sp.BringToFront(); Toast("Welcome, " + Cfg.Get("name", Environment.UserName) + " ");
-            await Task.Delay(400); _ = Changelog.Show(); Sched.Start(this); PhoneLink.Start(this); Study.StartAlarms(this); ClipHist.Start(this); VaultBackup.AutoStart(this); Buddy.Start(this); Pet.Attach(this, desk); RestoreSession(); if (Cfg.Get("companion", "1") == "1") { try { Companion.Greet(); } catch { } }
+            await Task.Delay(400); _ = Changelog.Show(); Sched.Start(this); PhoneLink.Start(this); Study.StartAlarms(this); ClipHist.Start(this); VaultBackup.AutoStart(this); Buddy.Start(this); WakeWord.Start(this); Pet.Attach(this, desk); RestoreSession(); if (Cfg.Get("companion", "1") == "1") { try { Companion.Greet(); } catch { } }
             try { var u = await Updater.Check(); if (u.latest > Updater.Cur && u.latest > Cfg.Int("skip_ver", 0)) { Toast("Update 1.0." + u.latest + " is available"); await Updater.Run(u.latest, u.url, true); } } catch { }
         };
     }
@@ -571,6 +571,7 @@ class DesktopForm : Form
             case "files": T(k, arg, AddWin("Files", "folder", Views.Files(this, arg ?? Paths.Root), new Size(800, 520))); break;
             case "code": T(k, arg, AddWin(arg == null ? "Code Editor" : Path.GetFileName(arg), "code", CodeEditor.View(this, arg), new Size(960, 600))); break;
             case "notepad": T(k, arg, AddWin(arg == null ? "Notepad" : Path.GetFileName(arg), "notepad", Views.Notepad(this, arg), new Size(680, 460))); break;
+            case "todo": T(k, arg, AddWin("To-do", "todo", Todo.View(this), new Size(380, 480))); break;
             case "getapps": T(k, arg, AddWin("Get Apps", "getapps", GetApps.View(this), new Size(700, 520))); break;
             case "games": T(k, arg, AddWin("Games", "games", Games.View(this), new Size(680, 520))); break;
             case "ai": T(k, arg, AddWin("AI Assistant", "ai", Assistant.View(this), new Size(760, 580))); break;
@@ -619,7 +620,14 @@ class DesktopForm : Form
         pw.Click += (_, _) => pm.Show(pw, new Point(0, 0), ToolStripDropDownDirection.AboveLeft);
         menu.Controls.AddRange(new Control[] { sb, pl, grid, mAv, mName, pw }); pwBtn = pw; Ui.Dark(grid); Controls.Add(menu);
     }
-    void ShowMenu() { quick.Visible = false; msearch.Text = ""; menu.Height = Math.Min(Ui.D(600), Height - bar.Height - Ui.D(24)); grid.Height = menu.Height - Ui.D(190); int uy = menu.Height - Ui.D(64); mAv.Top = uy; mName.Top = uy; if (pwBtn != null) pwBtn.Top = uy; menu.Location = new Point(Ui.D(10), Height - bar.Height - menu.Height - Ui.D(10)); mAv.Image = U.Avatar(Ui.D(44)); mName.Text = Cfg.Get("name", Environment.UserName); menu.Visible = true; menu.BringToFront(); }
+    bool profHooked;
+    void HookProfiles()
+    {
+        if (profHooked) return; profHooked = true;
+        MouseEventHandler h = (_, e) => Profiles.ShowMenu(this, Cursor.Position);
+        mAv.MouseUp += h; mName.MouseUp += h; mAv.Cursor = Cursors.Hand; mName.Cursor = Cursors.Hand;
+    }
+    void ShowMenu() { HookProfiles(); quick.Visible = false; msearch.Text = ""; menu.Height = Math.Min(Ui.D(600), Height - bar.Height - Ui.D(24)); grid.Height = menu.Height - Ui.D(190); int uy = menu.Height - Ui.D(64); mAv.Top = uy; mName.Top = uy; if (pwBtn != null) pwBtn.Top = uy; menu.Location = new Point(Ui.D(10), Height - bar.Height - menu.Height - Ui.D(10)); mAv.Image = U.Avatar(Ui.D(44)); mName.Text = Cfg.Get("name", Environment.UserName); menu.Visible = true; menu.BringToFront(); }
     void HideMenu() { menu.Visible = false; quick.Visible = false; }
     void ToggleQuick() { if (quick.Visible) { quick.Visible = false; return; } menu.Visible = false; quick.Refresh2(); quick.Location = new Point(Width - quick.Width - Ui.D(10), Height - bar.Height - quick.Height - Ui.D(10)); quick.Visible = true; quick.BringToFront(); }
     bool SaveState()

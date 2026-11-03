@@ -132,6 +132,14 @@ static class Icons
                     for (int i = 0; i < 4; i++) gg.DrawLine(lp, 82, 108 + i * 24, i == 3 ? 140 : 174, 108 + i * 24);
                     using var rp = new Pen(C(255, 255, 255), 6) { StartCap = LineCap.Round, EndCap = LineCap.Round }; foreach (var x in new[] { 92, 128, 164 }) gg.DrawLine(rp, x, 48, x, 66);
                 }));
+            case "todo":
+                return Make(g => Tile(g, C(70, 214, 150), C(18, 150, 104), gg =>
+                {
+                    using var pg = RR(62, 52, 132, 152, 16); Fill(gg, pg, C(255, 255, 255), C(228, 246, 238), 90f);
+                    using var ck = new Pen(C(24, 160, 110), 9) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+                    using var lp = new Pen(C(150, 190, 170), 7) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+                    for (int i = 0; i < 3; i++) { int y = 92 + i * 36; gg.DrawLines(ck, new[] { new PointF(80, y), new PointF(88, y + 9), new PointF(104, y - 9) }); gg.DrawLine(lp, 118, y, 180, y); }
+                }));
             case "calc":
                 return Make(g => Tile(g, C(58, 66, 90), C(24, 28, 44), gg =>
                 {

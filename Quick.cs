@@ -52,6 +52,8 @@ static class Quick
                 case "hw": { var r = Study.PhoneAction("hw", a); _ = PhoneLink.PostStudy(); _ = PhoneLink.PostEvents(); return r; }
                 case "lesson": { var r = Study.PhoneAction("lesson", a); _ = PhoneLink.PostStudy(); _ = PhoneLink.PostEvents(); return r; }
                 case "clips": return ClipHist.Run("list");
+                case "todo": return Todo.Run(a == "" ? "list" : a);
+                case "wake": return WakeWord.Set(a == "" ? "toggle" : a);
                 case "clipuse": return ClipHist.Run("use " + a);
                 case "status": return Status(sh);
                 case "screen":
@@ -63,6 +65,18 @@ static class Quick
             }
         }
         catch (Exception ex) { return "That didn't work: " + ex.Message; }
+    }
+
+    // Same as Run, but lets slower actions (reading text from the screen) finish without freezing the desktop
+    public static async Task<string> RunAsync(DesktopForm sh, string cmd, PhoneLink.Ctx ctx)
+    {
+        var t = cmd.Trim();
+        if (t.StartsWith("/ocr", StringComparison.OrdinalIgnoreCase))
+        {
+            var r = await Ocr.Run(sh, t[4..].Trim());
+            return r.StartsWith("ERR:") || r.StartsWith("I couldn") ? r : "📋 " + r;
+        }
+        return Run(sh, cmd, ctx);
     }
 
     static string Act(DesktopForm sh, string k, string a)
