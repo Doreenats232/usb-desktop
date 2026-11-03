@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 namespace UsbDesktop;
@@ -73,9 +74,49 @@ static class PhoneLink
         catch (Exception ex) { return "ERR: " + ex.Message; }
     }
 
+    // ---- full access ("allow everything"): switched on only from the phone app, never by the AI itself ----
+    public static bool FullAccess
+    {
+        get
+        {
+            if (Cfg.Get("ai_full", "0") != "1") return false;
+            if (long.TryParse(Cfg.Get("ai_full_until", "0"), out var u) && u > 0 && DateTime.UtcNow.Ticks > u) { Cfg.Set("ai_full", "0"); Cfg.Set("ai_full_until", "0"); return false; }
+            return true;
+        }
+    }
+    // Even with full access these still ask: sending email, and clearly destructive commands
+    static readonly Regex StillAsk = new(@"SEND this email|\bformat\s+[a-z]:|\bdiskpart\b|\bbcdedit\b|\b(rd|rmdir)\s+/s\b|\bdel\b[^\r\n]*\s[a-z]:\\\*?\s*$|reg\s+delete|cipher\s+/w", RegexOptions.IgnoreCase | RegexOptions.Multiline);
+
+    public static string SetFull(string a, DesktopForm sh)
+    {
+        var p = a.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        bool on = p.Length > 0 && p[0].Equals("on", StringComparison.OrdinalIgnoreCase);
+        int min = p.Length > 1 && int.TryParse(p[1], out var m) && m >= 0 && m <= 1440 ? m : 60;
+        if (!on)
+        {
+            Cfg.Set("ai_full", "0"); Cfg.Set("ai_full_until", "0"); _ = PostState(); Pet.React("🔒 Full access is off", 4);
+            return "🔒 Full access is OFF. The AI asks again before risky things.";
+        }
+        Cfg.Set("ai_full", "1"); Cfg.Set("ai_full_until", min > 0 ? DateTime.UtcNow.AddMinutes(min).Ticks.ToString() : "0");
+        _ = PostState(); Pet.React("🔓 Full access is on", 6); sh.Toast("🔓 Full access is on");
+        return "🔓 Full access is ON " + (min > 0 ? "for " + min + " minutes" : "until you turn it off") + ". The AI won't ask before acting, except for sending email and dangerous commands.";
+    }
+
+    public static async Task PostState()
+    {
+        try
+        {
+            long ms = 0;
+            if (long.TryParse(Cfg.Get("ai_full_until", "0"), out var u) && u > 0) ms = new DateTimeOffset(new DateTime(u, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
+            if (baseUrl != "") await Api(HttpMethod.Post, "/api/state", new { full = FullAccess, until = ms });
+        }
+        catch { }
+    }
+
     // ---- approvals: ask on the PC and on the phone, first answer wins
     public static bool Approve(string text)
     {
+        if (FullAccess && !StillAsk.IsMatch(text)) return true;
         if (Current == null || baseUrl == "") return MessageBox.Show(text, "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
         var id = Guid.NewGuid().ToString("N")[..10];
         _ = Api(HttpMethod.Post, "/api/ask", new { id, text });
@@ -83,7 +124,7 @@ static class PhoneLink
         var lbl = new Label { Text = text + "\n\n📱 Also sent to your phone: answer here or there.", Left = 14, Top = 12, Width = 430, Height = 120 };
         var yes = new Button { Text = "Allow", Left = 14, Top = 140, Width = 130, Height = 36, DialogResult = DialogResult.Yes };
         var no = new Button { Text = "Deny", Left = 316, Top = 140, Width = 130, Height = 36, DialogResult = DialogResult.No };
-        f.Controls.AddRange(new Control[] { lbl, yes, no }); f.AcceptButton = yes; f.CancelButton = no;
+        f.Controls.AddRange(new Control[] { lbl, yes, no }); f.AcceptButton = no; f.CancelButton = no;
         var t = new System.Windows.Forms.Timer { Interval = 1200 }; bool busy = false;
         t.Tick += async (_, _) =>
         {
@@ -148,7 +189,7 @@ static class PhoneLink
         {
             try
             {
-                if ((DateTime.Now - lastEv).TotalMinutes >= 5) { lastEv = DateTime.Now; _ = PostEvents(); _ = PostStudy(); }
+                if ((DateTime.Now - lastEv).TotalMinutes >= 5) { lastEv = DateTime.Now; _ = PostEvents(); _ = PostStudy(); _ = PostState(); }
                 using var resp = await http.SendAsync(Req(HttpMethod.Get, url + "/api/poll", code), ct);
                 var body = await resp.Content.ReadAsStringAsync(ct);
                 if (!resp.IsSuccessStatusCode) { Status = "Server said: " + body; await Task.Delay(8000, ct); continue; }

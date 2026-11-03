@@ -256,7 +256,7 @@ static class Assistant
 
     static async Task<(string shown, string feedback)> HandleReply(DesktopForm sh, string reply)
     {
-        var fb = new List<string>(); var muts = new List<(string k, string a)>(); bool trustB = Cfg.Get("ai_ask", "0") != "1";
+        var fb = new List<string>(); var muts = new List<(string k, string a)>(); bool trustB = Cfg.Get("ai_ask", "0") != "1" || PhoneLink.FullAccess;
         bool Yes(string t) => PhoneLink.Approve(t);
         var seenTags = new HashSet<string>(); int opens = 0;
         foreach (Match m in Act.Matches(reply))
@@ -278,7 +278,7 @@ static class Assistant
                         }
                     case "run":
                         {
-                            if (!(trustB && AiActions.SafeCmd(a)) && MessageBox.Show("The assistant wants to run this command on this PC:\n\n" + a + "\n\nOnly allow it if you understand it. Run it?", "AI Assistant", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) { fb.Add("The user did not allow running that command."); break; }
+                            if (!(trustB && AiActions.SafeCmd(a)) && !Yes("The assistant wants to run this command on this PC:\n\n" + a + "\n\nOnly allow it if you understand it. Run it?")) { fb.Add("The user did not allow running that command."); break; }
                             var o = await Task.Run(() =>
                             {
                                 using var pr = Process.Start(new ProcessStartInfo("cmd.exe", "/c " + a) { RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, UseShellExecute = false, WorkingDirectory = Paths.Root })!;

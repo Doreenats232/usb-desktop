@@ -7,7 +7,7 @@ static class Buddy
     [StructLayout(LayoutKind.Sequential)] struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
     [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO p);
 
-    static bool greeted, asleep; static DateTime nextBattery = DateTime.MinValue, started = DateTime.Now;
+    static bool greeted, asleep, lastFull; static DateTime nextBattery = DateTime.MinValue, started = DateTime.Now;
 
     static int IdleSeconds()
     {
@@ -23,6 +23,7 @@ static class Buddy
         {
             try
             {
+                bool full = PhoneLink.FullAccess; if (lastFull && !full) { Pet.React("🔒 Full access ended", 6); _ = PhoneLink.PostState(); } lastFull = full;
                 if (Cfg.Get("buddy_react", "1") != "1") return;
                 var now = DateTime.Now;
                 if (!greeted && (now - started).TotalSeconds > 6)
