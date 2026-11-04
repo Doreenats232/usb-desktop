@@ -60,8 +60,9 @@ static class Quick
                 case "status": return Status(sh);
                 case "screen":
                     {
-                        var jpg = sh.ShotJpeg(); if (jpg == null) return "I couldn't capture the screen.";
-                        ctx.AttachName = "screen.jpg"; ctx.AttachBytes = jpg; return "Here is your PC screen right now.";
+                        bool live = a.Trim().Equals("live", StringComparison.OrdinalIgnoreCase);   // "/screen live" = smaller picture for the phone's live view
+                        var jpg = sh.ShotJpeg(live ? 900 : 1280); if (jpg == null) return "I couldn't capture the screen.";
+                        ctx.AttachName = "screen.jpg"; ctx.AttachBytes = jpg; return live ? "live" : "Here is your PC screen right now.";
                     }
                 default: return "I don't know the quick action \"" + k + "\".";
             }
