@@ -78,6 +78,10 @@ static class Quick
             var r = await Ocr.Run(sh, t[4..].Trim());
             return r.StartsWith("ERR:") || r.StartsWith("I couldn") ? r : "📋 " + r;
         }
+        if (t.StartsWith("/databackup", StringComparison.OrdinalIgnoreCase))
+        {
+            try { return "💾 " + await DataBackup.Backup(_ => { }, CancellationToken.None); } catch (Exception ex) { return "💾 ❌ " + ex.Message; }
+        }
         return Run(sh, cmd, ctx);
     }
 

@@ -10,13 +10,13 @@ static class VaultBackup
     static string Base => Cfg.Get("vault_url", "https://terabox-vault-backend-1.onrender.com").Trim().TrimEnd('/');
     public static bool Ready => Base != "" && Cfg.Get("vault_key").Trim() != "";
 
-    static HttpRequestMessage Rq(HttpMethod m, string path, string? json = null)
+    internal static HttpRequestMessage Rq(HttpMethod m, string path, string? json = null)
     {
         var u = Base; if (!u.StartsWith("http", StringComparison.OrdinalIgnoreCase)) u = "https://" + u;
         var r = new HttpRequestMessage(m, u + path); r.Headers.Add("X-Api-Key", Cfg.Get("vault_key").Trim());
         if (json != null) r.Content = new StringContent(json, Encoding.UTF8, "application/json"); return r;
     }
-    static async Task<JsonElement> Json(HttpRequestMessage r, CancellationToken ct)
+    internal static async Task<JsonElement> Json(HttpRequestMessage r, CancellationToken ct)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct); cts.CancelAfter(TimeSpan.FromSeconds(90));
         using var resp = await Net.Http.SendAsync(r, cts.Token); var b = await resp.Content.ReadAsStringAsync(cts.Token);
@@ -26,7 +26,7 @@ static class VaultBackup
     }
 
     // name -> size in bytes (-1 when the vault does not report sizes)
-    static async Task<Dictionary<string, long>> Listing(CancellationToken ct)
+    internal static async Task<Dictionary<string, long>> Listing(CancellationToken ct)
     {
         var j = await Json(Rq(HttpMethod.Get, "/v1/fs/list?dir="), ct); var map = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase); var arr = j;
         if (j.ValueKind == JsonValueKind.Object) foreach (var p in j.EnumerateObject()) if (p.Value.ValueKind == JsonValueKind.Array) { arr = p.Value; break; }
@@ -44,10 +44,10 @@ static class VaultBackup
         }
         return map;
     }
-    static async Task<HashSet<string>> Names(CancellationToken ct) => new HashSet<string>((await Listing(ct)).Keys, StringComparer.OrdinalIgnoreCase);
-    static async Task TryDelete(string rn, CancellationToken ct) { try { using var d = await Net.Http.SendAsync(Rq(HttpMethod.Post, "/v1/fs/delete", JsonSerializer.Serialize(new { path = rn })), ct); } catch { } }
+    internal static async Task<HashSet<string>> Names(CancellationToken ct) => new HashSet<string>((await Listing(ct)).Keys, StringComparer.OrdinalIgnoreCase);
+    internal static async Task TryDelete(string rn, CancellationToken ct) { try { using var d = await Net.Http.SendAsync(Rq(HttpMethod.Post, "/v1/fs/delete", JsonSerializer.Serialize(new { path = rn })), ct); } catch { } }
 
-    static async Task Upload(string local, string remote, CancellationToken ct)
+    internal static async Task Upload(string local, string remote, CancellationToken ct)
     {
         var fi = new FileInfo(local);
         var init = await Json(Rq(HttpMethod.Post, "/v1/fs/uploads", JsonSerializer.Serialize(new { filename = remote, size = fi.Length })), ct);
@@ -137,7 +137,7 @@ static class VaultBackup
     public static async Task BackupSettings(Action<string> say, CancellationToken ct)
     {
         var f = Path.Combine(Paths.Data, "settings.ini"); if (!File.Exists(f)) throw new Exception("No settings saved yet.");
-        var lines = File.ReadAllLines(f).Where(l => !l.Split('=')[0].EndsWith("_key")).ToArray();
+        var lines = File.ReadAllLines(f).Where(l => !DataBackup.Skip(l.Split('=')[0])).ToArray();
         var tmp = Path.Combine(Path.GetTempPath(), "UsbDesktop-settings.txt"); File.WriteAllLines(tmp, lines);
         const string rn = "usbdesktop-settings.ini"; var have = await Names(ct); say("Saving settings…");
         if (have.Contains(rn)) { try { using var d = await Net.Http.SendAsync(Rq(HttpMethod.Post, "/v1/fs/delete", JsonSerializer.Serialize(new { path = rn })), ct); } catch { } }
@@ -149,7 +149,7 @@ static class VaultBackup
         const string rn = "usbdesktop-settings.ini"; if (!(await Names(ct)).Contains(rn)) throw new Exception("No settings backup found in your TeraBox project.");
         say("Loading settings…"); var s = await Json(Rq(HttpMethod.Post, "/v1/fs/sign", JsonSerializer.Serialize(new { path = rn, ttl = 900 })), ct);
         var tmp = Path.Combine(Path.GetTempPath(), "UsbDesktop-settings-in.txt"); await Net.Download(s.GetProperty("url").GetString()!, tmp, (_, _, _) => { }, ct);
-        foreach (var l in File.ReadAllLines(tmp)) { var i = l.IndexOf('='); if (i > 0 && !l[..i].EndsWith("_key")) Cfg.Set(l[..i], l[(i + 1)..]); }
+        foreach (var l in File.ReadAllLines(tmp)) { var i = l.IndexOf('='); if (i > 0 && !DataBackup.Skip(l[..i])) Cfg.Set(l[..i], l[(i + 1)..]); }
         try { File.Delete(tmp); } catch { } say("Settings loaded. Restart USB Desktop to apply them.");
     }
 
@@ -185,14 +185,33 @@ static class VaultBackup
 
     public static void Settings()
     {
-        using var f = new Form { Text = "Vault backup settings", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen, ClientSize = new Size(480, 240), MaximizeBox = false, MinimizeBox = false, TopMost = true };
+        using var f = new Form { Text = "Vault backup settings", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen, ClientSize = new Size(480, 340), MaximizeBox = false, MinimizeBox = false, TopMost = true };
         var l1 = new Label { Text = "TeraBox vault address", Left = 16, Top = 14, AutoSize = true };
         var u = new TextBox { Left = 16, Top = 36, Width = 448, Text = Cfg.Get("vault_url", "https://terabox-vault-backend-1.onrender.com") };
         var l2 = new Label { Text = "API key (for the project that holds your backups)", Left = 16, Top = 72, AutoSize = true };
         var k = new TextBox { Left = 16, Top = 94, Width = 448, UseSystemPasswordChar = true, Text = Cfg.Get("vault_key") };
         var auto = new CheckBox { Text = "Back up automatically a few minutes after the vault changes", Left = 16, Top = 130, Width = 448, Checked = Cfg.Get("vault_auto", "1") == "1" };
-        var ok = new Button { Text = "Save", Left = 16, Top = 180, Width = 110, Height = 32, DialogResult = DialogResult.OK };
-        f.Controls.AddRange(new Control[] { l1, u, l2, k, auto, ok }); f.AcceptButton = ok;
-        if (f.ShowDialog() == DialogResult.OK) { Cfg.Set("vault_url", u.Text.Trim()); Cfg.Set("vault_key", k.Text.Trim()); Cfg.Set("vault_auto", auto.Checked ? "1" : "0"); }
+        var dauto = new CheckBox { Text = "Also back up my settings and AI history automatically", Left = 16, Top = 158, Width = 448, Checked = Cfg.Get("data_auto", "1") == "1" };
+        var db = new Button { Text = "Back up data now", Left = 16, Top = 192, Width = 150, Height = 30 };
+        var dr = new Button { Text = "Restore data", Left = 176, Top = 192, Width = 130, Height = 30 };
+        var ds = new Label { Text = "", Left = 16, Top = 230, Width = 448, Height = 50 };
+        void Say(string m) { if (!ds.IsDisposed) ds.Text = m; }
+        void Keep() { Cfg.Set("vault_url", u.Text.Trim()); Cfg.Set("vault_key", k.Text.Trim()); }
+        db.Click += async (_, _) =>
+        {
+            Keep(); db.Enabled = false; dr.Enabled = false; Say("Working…");
+            try { Say(await DataBackup.Backup(Say, CancellationToken.None)); } catch (Exception ex) { Say("❌ " + ex.Message); }
+            if (!db.IsDisposed) { db.Enabled = true; dr.Enabled = true; }
+        };
+        dr.Click += async (_, _) =>
+        {
+            if (MessageBox.Show("Restore puts your saved settings and AI chat history back from the vault, replacing the ones on this USB. Continue?", "Restore data", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            Keep(); db.Enabled = false; dr.Enabled = false; Say("Working…");
+            try { Say("✅ " + await DataBackup.Restore(Say, CancellationToken.None)); } catch (Exception ex) { Say("❌ " + ex.Message); }
+            if (!db.IsDisposed) { db.Enabled = true; dr.Enabled = true; }
+        };
+        var ok = new Button { Text = "Save", Left = 16, Top = 292, Width = 110, Height = 32, DialogResult = DialogResult.OK };
+        f.Controls.AddRange(new Control[] { l1, u, l2, k, auto, dauto, db, dr, ds, ok }); f.AcceptButton = ok;
+        if (f.ShowDialog() == DialogResult.OK) { Cfg.Set("vault_url", u.Text.Trim()); Cfg.Set("vault_key", k.Text.Trim()); Cfg.Set("vault_auto", auto.Checked ? "1" : "0"); Cfg.Set("data_auto", dauto.Checked ? "1" : "0"); }
     }
 }
