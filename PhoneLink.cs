@@ -25,7 +25,7 @@ static class PhoneLink
         if (url == "" || code.Length < 8) { Status = "Add the server address and an 8+ character code"; return; }
         if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) url = "https://" + url;
         baseUrl = url; pair = code; shell = sh;
-        cts = new CancellationTokenSource(); _ = Loop(sh, url, code, cts.Token);
+        cts = new CancellationTokenSource(); _ = Loop(sh, url, code, cts.Token); _ = RemoteInput.Loop(sh, url, code, cts.Token);
     }
     public static void Stop() { try { cts?.Cancel(); } catch { } cts = null; }
 
@@ -108,7 +108,7 @@ static class PhoneLink
         {
             long ms = 0;
             if (long.TryParse(Cfg.Get("ai_full_until", "0"), out var u) && u > 0) ms = new DateTimeOffset(new DateTime(u, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
-            if (baseUrl != "") await Api(HttpMethod.Post, "/api/state", new { full = FullAccess, until = ms });
+            if (baseUrl != "") await Api(HttpMethod.Post, "/api/state", new { full = FullAccess, until = ms, remote = RemoteInput.Enabled });
         }
         catch { }
     }
@@ -260,11 +260,12 @@ static class PhoneLink
         var gen = new Button { Text = "Make a code", Left = 402, Top = 126, Width = 102, Height = 28 };
         gen.Click += (_, _) => c.Text = Guid.NewGuid().ToString("N")[..16];
         var on = new CheckBox { Text = "Phone link on", Left = 14, Top = 168, Width = 300, Checked = Cfg.Get("phone_on", "0") == "1" };
-        var st = new Label { Text = "Status: " + Status, Left = 14, Top = 200, Width = 490, Height = 40 };
+        var st = new Label { Text = "Status: " + Status, Left = 14, Top = 198, Width = 490, Height = 34 };
+        var rem = new CheckBox { Text = "Let the phone move the mouse and type (touchpad + keyboard)", Left = 14, Top = 238, Width = 490, Checked = Cfg.Get("remote_input", "0") == "1" };
         var save = new Button { Text = "Save", Left = 14, Top = 270, Width = 110, Height = 34, DialogResult = DialogResult.OK };
         var close = new Button { Text = "Close", Left = 394, Top = 270, Width = 110, Height = 34, DialogResult = DialogResult.Cancel };
-        save.Click += (_, _) => { Cfg.Set("phone_url", u.Text.Trim()); Cfg.Set("phone_code", c.Text.Trim()); Cfg.Set("phone_on", on.Checked ? "1" : "0"); Start(sh); };
-        f.Controls.AddRange(new Control[] { info, L("Server address (from Render)", 52), u, L("Pairing code (8+ characters, keep it secret)", 108), c, gen, on, st, save, close });
+        save.Click += (_, _) => { Cfg.Set("phone_url", u.Text.Trim()); Cfg.Set("phone_code", c.Text.Trim()); Cfg.Set("phone_on", on.Checked ? "1" : "0"); Cfg.Set("remote_input", rem.Checked ? "1" : "0"); Start(sh); _ = PostState(); };
+        f.Controls.AddRange(new Control[] { info, L("Server address (from Render)", 52), u, L("Pairing code (8+ characters, keep it secret)", 108), c, gen, on, st, rem, save, close });
         f.AcceptButton = save; f.CancelButton = close; f.ShowDialog();
     }
 }
