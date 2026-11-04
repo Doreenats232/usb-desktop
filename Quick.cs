@@ -82,6 +82,10 @@ static class Quick
         {
             try { return "💾 " + await DataBackup.Backup(_ => { }, CancellationToken.None); } catch (Exception ex) { return "💾 ❌ " + ex.Message; }
         }
+        if (t.StartsWith("/health", StringComparison.OrdinalIgnoreCase))
+        {
+            try { return "🩺 " + await HealthCheck.Run(sh, _ => { }); } catch (Exception ex) { return "🩺 ❌ " + ex.Message; }
+        }
         return Run(sh, cmd, ctx);
     }
 
