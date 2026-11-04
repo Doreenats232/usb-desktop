@@ -9,7 +9,7 @@ namespace UsbDesktop;
 // It also publishes upcoming alarms and homework so the phone can ring its own notifications.
 static class PhoneLink
 {
-    public class Ctx { public string? AttachPath, AttachName; public byte[]? AttachBytes; }
+    public class Ctx { public string? AttachPath, AttachName, SavedPath; public byte[]? AttachBytes; }
     public static Ctx? Current;                     // set while a phone command is running
     static CancellationTokenSource? cts;
     static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(60) };
@@ -213,7 +213,7 @@ static class PhoneLink
                 {
                     // quick action from the phone grid: run directly, no AI
                     var qt = new TaskCompletionSource<(string, Ctx)>();
-                    sh.BeginInvoke(new Action(async () => { var c = new Ctx(); string r; try { r = await Quick.RunAsync(sh, text, c); } catch (Exception ex) { r = "That didn't work: " + ex.Message; } qt.SetResult((r, c)); }));
+                    sh.BeginInvoke(new Action(async () => { var c = new Ctx { SavedPath = savedPath }; string r; try { r = await Quick.RunAsync(sh, text, c); } catch (Exception ex) { r = "That didn't work: " + ex.Message; } qt.SetResult((r, c)); }));
                     var (qr, qc) = await qt.Task; reply = qr; rctx = qc;
                 }
                 else

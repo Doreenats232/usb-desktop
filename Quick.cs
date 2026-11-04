@@ -52,6 +52,7 @@ static class Quick
                 case "hw": { var r = Study.PhoneAction("hw", a); _ = PhoneLink.PostStudy(); _ = PhoneLink.PostEvents(); return r; }
                 case "lesson": { var r = Study.PhoneAction("lesson", a); _ = PhoneLink.PostStudy(); _ = PhoneLink.PostEvents(); return r; }
                 case "fullaccess": return PhoneLink.SetFull(a, sh);
+                case "fs": return PhoneFiles.Run(sh, a, ctx);
                 case "clips": return ClipHist.Run("list");
                 case "todo": return Todo.Run(a == "" ? "list" : a);
                 case "wake": return WakeWord.Set(a == "" ? "toggle" : a);
