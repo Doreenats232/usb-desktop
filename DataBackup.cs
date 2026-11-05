@@ -147,7 +147,7 @@ static class DataBackup
             catch (Exception ex)
             {
                 nextTry = DateTime.Now.AddMinutes(60);
-                var m = ex.Message.Length > 110 ? ex.Message[..110] + "…" : ex.Message; sh.Toast("💾 Data auto-backup failed ❌ " + m);
+                var m = ex.Message.Length > 110 ? ex.Message[..110] + "…" : ex.Message; sh.Toast("💾 Data auto-backup failed ❌ " + m); PhoneLink.Alert("💾 Data backup failed", m);
             }
         };
         t.Start();

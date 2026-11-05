@@ -34,6 +34,20 @@ static class PhoneLink
         var r = new HttpRequestMessage(m, url); r.Headers.Add("x-pair", code);
         if (json != null) r.Content = new StringContent(json, Encoding.UTF8, "application/json"); return r;
     }
+    // ---- a short alert the phone shows as a notification (battery low, backup failed, download finished...)
+    static readonly Dictionary<string, DateTime> alertSeen = new();
+    public static void Alert(string title, string body = "")
+    {
+        try
+        {
+            if (baseUrl == "" || Cfg.Get("phone_on", "0") != "1") return;
+            var key = title + "|" + body; var now = DateTime.Now;
+            lock (alertSeen) { if (alertSeen.TryGetValue(key, out var t) && (now - t).TotalMinutes < 10) return; alertSeen[key] = now; if (alertSeen.Count > 50) alertSeen.Clear(); }
+            _ = Api(HttpMethod.Post, "/api/alert", new { title, body });
+        }
+        catch { }
+    }
+
     static async Task<JsonElement?> Api(HttpMethod m, string path, object? body = null)
     {
         try

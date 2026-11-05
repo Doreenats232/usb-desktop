@@ -176,7 +176,7 @@ static class VaultBackup
             {
                 nextTry = DateTime.Now.AddMinutes(30);   // don't nag: try again in half an hour
                 var m = ex.Message.Length > 120 ? ex.Message[..120] + "…" : ex.Message;
-                sh.Toast("☁ Vault auto-backup failed ❌ " + m); Pet.React("☁ Vault backup failed ❌", 6);
+                sh.Toast("☁ Vault auto-backup failed ❌ " + m); PhoneLink.Alert("☁ Vault backup failed", m); Pet.React("☁ Vault backup failed ❌", 6);
             }
             busy = false;
         };

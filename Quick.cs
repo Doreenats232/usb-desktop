@@ -76,7 +76,11 @@ static class Quick
         var t = cmd.Trim();
         if (t.StartsWith("/ocr", StringComparison.OrdinalIgnoreCase))
         {
-            var r = await Ocr.Run(sh, t[4..].Trim());
+            var arg = t[4..].Trim(); bool photo = arg.Equals("photo", StringComparison.OrdinalIgnoreCase);   // "/ocr photo" = the picture that came with this message
+            if (photo && (ctx.SavedPath == null || !File.Exists(ctx.SavedPath))) return "ERR: I didn't get a photo.";
+            string r;
+            try { r = await Ocr.Run(sh, photo ? ctx.SavedPath! : arg); }
+            finally { if (photo) { try { File.Delete(ctx.SavedPath!); } catch { } } }   // a scan is temporary: don't leave it in Downloads
             return r.StartsWith("ERR:") || r.StartsWith("I couldn") ? r : "📋 " + r;
         }
         if (t.StartsWith("/databackup", StringComparison.OrdinalIgnoreCase))

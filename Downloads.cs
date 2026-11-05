@@ -66,12 +66,12 @@ static class Installer
                 card.Stage("Installing… 0%", 0);
                 string folder = await Task.Run(() => ExtractZip(file, Paths.Apps, p => card.Stage("Installing…  " + (int)p + "%", p)));
                 try { File.Delete(file); } catch { }
-                sh.ReloadApps(); sh.Reload(); card.Done("Installed · find it in the Start menu"); sh.Toast("Installed " + Path.GetFileName(folder));
+                sh.ReloadApps(); sh.Reload(); card.Done("Installed · find it in the Start menu"); sh.Toast("Installed " + Path.GetFileName(folder)); PhoneLink.Alert("⬇ Install finished", Path.GetFileName(folder));
             }
             else
             {
                 if (asApp) { sh.ReloadApps(); }
-                sh.Reload(); card.Done("Saved · " + Ui.Bytes(len)); sh.Toast("Downloaded " + Path.GetFileName(file));
+                sh.Reload(); card.Done("Saved · " + Ui.Bytes(len)); sh.Toast("Downloaded " + Path.GetFileName(file)); PhoneLink.Alert("⬇ Download finished", Path.GetFileName(file));
             }
         }
         catch (InvalidDataException) { card.Fail("This isn't a valid zip. The download may be incomplete."); }
