@@ -14,6 +14,8 @@ static class PhoneLink
     static CancellationTokenSource? cts;
     static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(60) };
     static string baseUrl = "", pair = "";
+    internal static string BaseUrl => baseUrl;
+    internal static string Pair => pair;
     static DesktopForm? shell;
     public static string Status = "Off";
 
