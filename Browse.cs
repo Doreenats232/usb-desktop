@@ -87,7 +87,10 @@ static class BrowserCtl
                 else await NavigateAndWait(c, url);
                 string r = ""; for (int i = 0; i < 8 && r != "clicked"; i++) { await Task.Delay(1000); r = await Js(c, "(function(){var a=document.querySelector('ytd-video-renderer a#video-title, a#video-title');if(a){a.click();return 'clicked';}return '';})()"); }
                 if (r != "clicked") return "ERR: I couldn't find a video to play on YouTube.";
-                await Task.Delay(3500); await Js(c, "(function(){var v=document.querySelector('video');if(v){v.play();}})()"); return "";
+                await Task.Delay(3500); await Js(c, "(function(){var v=document.querySelector('video');if(v){v.play();}})()");
+                await Task.Delay(1500); var playing = await Js(c, "(function(){var v=document.querySelector('video');return (v&&!v.paused&&v.currentTime>0)?'playing':'no';})()");
+                if (playing == null || !playing.Contains("playing")) return "ERR: I opened the video, but I can't confirm that it started playing (an ad or the page may be blocking it).";
+                return "";
             }
             if (c == null) return "ERR: no Browser window is open. Open one with the web action first.";
             switch (kind)

@@ -25,6 +25,8 @@ static class Sched
         w = w.Trim().ToLowerInvariant();
         if (w == "startup" || w == "on startup" || w == "at startup") return "startup";
         var d = Regex.Match(w, @"^daily\s+(\d{1,2}):(\d{2})$"); if (d.Success) { int h = int.Parse(d.Groups[1].Value), m = int.Parse(d.Groups[2].Value); if (h < 24 && m < 60) return $"daily {h:00}:{m:00}"; }
+        var o = Regex.Match(w, @"^once\s+(\d{1,2}):(\d{2})$");
+        if (o.Success) { int h = int.Parse(o.Groups[1].Value), m = int.Parse(o.Groups[2].Value); if (h < 24 && m < 60) { var at = DateTime.Today.AddHours(h).AddMinutes(m); if (at <= DateTime.Now) at = at.AddDays(1); return "once " + at.ToString("yyyy-MM-dd HH:mm"); } }
         var e = Regex.Match(w, @"^every\s+(\d{1,4})(\s*min\w*)?$"); if (e.Success) { int n = int.Parse(e.Groups[1].Value); if (n >= 5) return "every " + n; }
         return null;
     }
@@ -48,7 +50,7 @@ static class Sched
     public static string Add(string a)
     {
         var i = a.IndexOf('|'); if (i <= 0) return "A task needs a time and an action, like: daily 07:30|remind:Wake up";
-        var when = NormWhen(a[..i]); if (when == null) return "I couldn't understand that time. Use: startup, daily HH:mm, or every N (minutes, 5 or more).";
+        var when = NormWhen(a[..i]); if (when == null) return "I couldn't understand that time. Use: startup, once HH:mm, daily HH:mm, or every N (minutes, 5 or more).";
         var act = a[(i + 1)..].Trim(); var err = CheckAction(when, act); if (err != null) return err;
         if (tasks.Count >= 20) return "You already have 20 tasks. Remove one first.";
         if (tasks.Any(t => t.When == when && t.Action == act)) return "That task already exists.";
@@ -82,6 +84,12 @@ static class Sched
             {
                 var p = t.When[6..].Split(':'); var due = now.Date.AddHours(int.Parse(p[0])).AddMinutes(int.Parse(p[1]));
                 if (now >= due && now < due.AddMinutes(15) && t.Last < due) Run(t);
+            }
+            else if (t.When.StartsWith("once"))
+            {
+                if (!DateTime.TryParseExact(t.When[5..], "yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var due)) { t.On = false; Save(); continue; }
+                if (now >= due && now < due.AddMinutes(30) && t.Last < due) { Run(t); t.On = false; Save(); }   // runs once, then switches itself off
+                else if (now >= due.AddMinutes(30)) { t.On = false; Save(); }                                      // missed (the PC was off): don't fire it late
             }
             else if (t.When.StartsWith("every") && (now - t.Last).TotalMinutes >= int.Parse(t.When[6..])) Run(t);
         }

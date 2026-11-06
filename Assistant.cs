@@ -108,7 +108,7 @@ static class Assistant
             "[[remember:a short fact about the user]] saves something to remember for next time; " +
             "paths below are relative to the USB root: [[list:Desktop]] lists a folder; [[search:word]] searches file names and text; [[sysinfo:]] gives OS, RAM, USB space, battery and Wi-Fi; [[desktop:]] shows icons, windows and the sticky note; " +
             "[[sticky:new text]] replaces the sticky note and [[stickyread:]] reads it; [[mkdir:Desktop/New]]; [[move:Desktop/a.txt|Desktop/Folder]]; [[copy:src|dst]]; [[rename:Desktop/a.txt|b.txt]]; [[delete:Desktop/a.txt]] (goes to the Recycle Bin); " +
-            "[[schedule:startup|open:notepad]], [[schedule:daily 07:30|remind:text]] or [[schedule:every 30|remind:text]] (every N minutes, 5 or more) create a task (allowed actions: open:APP, web:URL, note:Title|text, sticky:text, remind:text, arrange:), [[tasks:]] lists them, [[unschedule:id or words]] removes one, tasks only run while USB Desktop is open; " +
+            "[[schedule:startup|open:notepad]], [[schedule:once 01:00|remind:text]] (one time at the next 01:00: use this when the user says at 1am without every day), [[schedule:daily 07:30|remind:text]] (every day) or [[schedule:every 30|remind:text]] (every N minutes, 5 or more) create a task (allowed actions: open:APP, web:URL, note:Title|text, sticky:text, remind:text, arrange:), [[tasks:]] lists them, [[unschedule:id or words]] removes one, tasks only run while USB Desktop is open; " +
             "these control the Browser window: [[scroll:down|up|top|bottom]], [[nav:back|forward|reload]], [[goto:address or search words]], [[play:song or video name]] searches YouTube and plays the first result, [[media:play|pause|toggle|mute|unmute|next|fullscreen]], [[page:]] reads the page title, text and clickable items, [[click:text of a button or link]], [[type:box name|text to type]], [[key:enter]] presses Enter; open a Browser first with [[web:...]] if none is open; " +
             "YOUR SCREEN IS THE USB DESKTOP: when the user asks what you can see, what is on the screen or desktop, or what is open, answer from the 'Right now' line below or use [[desktop:]], and never describe their real Windows desktop; [[screen:]] looks at the real Windows PC outside USB Desktop and is ONLY for when the user clearly says 'my PC', 'my computer' or 'Windows'; [[outfit:auto]] makes your character pick its outfit from the weather and time, and [[outfit:auto on]] or [[outfit:auto off]] does that at every start. " +
             "[[homework:add Maths exercise 5|2026-10-28]] saves homework (date optional), [[homework:list]] shows it, [[homework:done 2]] ticks one off, [[homework:clear]] removes finished ones; [[timetable:set Mon|Maths, English]] saves a day, [[timetable:today]] or [[timetable:show]] reads it; [[studyfeed:]] opens the user's StudyFeed site, [[studyfeed:today]] lists today's quiz questions from it, [[studyfeed:feed Physics]] lists recent questions (subject optional), [[studyfeed:answer 2]] reveals the answer to question 2 of the last list (only when the user asks or has tried), [[studyfeed:explain concept]] explains something simply; when quizzing, ask one question at a time and reveal the answer after they try; you can also quiz the user on any subject by chatting. [[game:snake]] or [[game:tictactoe]] opens a mini game to play together. " +
@@ -163,8 +163,30 @@ static class Assistant
         if (fromPet) Busy?.Invoke(true);
         try { return await ConverseCore(sh, text, fromPet, label); } finally { if (fromPet) Busy?.Invoke(false); }
     }
+    // short, plain commands that the PC can do by itself: no need to wait for the AI
+    static readonly Regex FastRx = new(@"^(?:please\s+)?(?:(?:open|launch|start|run)\s+(?:the\s+|my\s+)?[a-z ]{2,20}|undo(?: that| it)?|lock(?: the)?(?: pc| computer| screen)?|(?:eject|safely remove)(?: the)?(?: usb| drive)?|(?:sort|arrange|organi[sz]e)(?: my| the)?(?: desktop)?(?: icons)?(?: from)? (?:a to z|a-z|alphabetically)|what(?:'s| is)?(?: the)? (?:time|date)(?: now| today)?|what time is it(?: now)?)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    static DateTime lastAi = DateTime.MinValue;
+    // Render's free servers go to sleep; this pings the AI server while you are chatting so the next answer isn't a cold start
+    public static void WarmStart(DesktopForm sh)
+    {
+        async void Ping() { try { var u = Cfg.Get("ai_url", DefUrl).Trim(); if (u == "" || Cfg.Get("ai_key") == "") return; using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60)); using var r = await Net.Http.GetAsync(u, HttpCompletionOption.ResponseHeadersRead, cts.Token); } catch { } }
+        var t = new System.Windows.Forms.Timer { Interval = 9 * 60000 }; t.Tick += (_, _) => { if ((DateTime.Now - lastAi).TotalMinutes < 30) Ping(); }; t.Start();
+        var first = new System.Windows.Forms.Timer { Interval = 30000 }; first.Tick += (_, _) => { first.Stop(); Ping(); }; first.Start();
+    }
     static async Task<string> ConverseCore(DesktopForm sh, string text, bool fromPet, string label)
     {
+        lastAi = DateTime.Now;
+        if (FastRx.IsMatch(text.Trim().TrimEnd('.', '!', '?', ' ')))
+        {
+            var fast = await Offline(sh, text);
+            if (fast != null)
+            {
+                fast = fast.Replace("(offline) ", "");
+                H.Add(new() { ["role"] = "user", ["content"] = text }); H.Add(new() { ["role"] = "assistant", ["content"] = fast }); Save(H);
+                if (fromPet) { Message?.Invoke(true, label + text); Message?.Invoke(false, fast); }
+                Replied?.Invoke(fast, fromPet); return fast;
+            }
+        }
         string url = Cfg.Get("ai_url", DefUrl), key = Cfg.Get("ai_key"), model = Cfg.Get("ai_model");
         if (url == "" || key == "") throw new Exception("Add your RelayAPI key in the assistant's Settings first.");
         H.Add(new() { ["role"] = "user", ["content"] = text }); string clean = ""; if (fromPet) Message?.Invoke(true, label + text);
@@ -174,16 +196,19 @@ static class Assistant
             // RelayAPI keeps ONE saved chat per key and only forwards the newest message, so the rules must ride inside every user message (a separate system message would be dropped)
             var msgs = new List<object>(); // old chat is NOT re-sent: a new key/chat would replay and redo every old request
             msgs.Add(new { role = "user", content = Sys(sh.DesktopSnapshot()) + "\n\nIMPORTANT: act ONLY on the message below. Anything said earlier is finished: never redo, repeat or reopen earlier requests, pages or tabs.\n\nThe user says: " + text });
+            bool acted = false;
             for (int round = 0; round < 3; round++)
             {
                 var reply = await Net.Chat(url, key, model, msgs.ToArray(), CancellationToken.None);
                 reply = StripEcho(reply); // RelayAPI sometimes sends back our own rules and old results: keep only the real reply
+                if (reply.Trim() == "" && round < 2) continue;   // empty answer (the AI website hiccuped): ask again instead of replying "Done."
+                acted |= Act.IsMatch(reply);
                 var (shown, fbk) = await HandleReply(sh, reply);
                 if (shown != "") clean = clean == "" ? shown : clean + "\n" + shown;
                 if (fbk == "") break;
                 msgs.Add(new { role = "assistant", content = reply }); msgs.Add(new { role = "user", content = "(USB Desktop results of your tags. You really can control this PC with tags, so keep using them and never say you cannot.)\n" + fbk });
             }
-            if (clean == "") clean = "Done.";
+            if (clean == "") clean = acted ? "Done." : "I didn't get an answer from the AI that time. Please say that again.";
             H.Add(new() { ["role"] = "assistant", ["content"] = clean }); Save(H);
         }
         catch (Exception ex)
