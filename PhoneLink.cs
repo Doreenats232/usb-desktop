@@ -25,7 +25,7 @@ static class PhoneLink
         if (url == "" || code.Length < 8) { Status = "Add the server address and an 8+ character code"; return; }
         if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) url = "https://" + url;
         baseUrl = url; pair = code; shell = sh;
-        cts = new CancellationTokenSource(); _ = Loop(sh, url, code, cts.Token); _ = RemoteInput.Loop(sh, url, code, cts.Token);
+        cts = new CancellationTokenSource(); _ = Loop(sh, url, code, cts.Token); _ = RemoteInput.Loop(sh, url, code, cts.Token); _ = Realtime.Loop(sh, url, code, cts.Token);
     }
     public static void Stop() { try { cts?.Cancel(); } catch { } cts = null; }
 

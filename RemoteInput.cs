@@ -16,9 +16,21 @@ static class RemoteInput
     public static bool Enabled => Cfg.Get("remote_input", "0") == "1";
     static bool held; static DateTime lastEvt = DateTime.MinValue;
 
+    static DateTime beat = DateTime.MinValue;
+    // applies a batch of events from the phone (from the WebSocket or the HTTP fallback)
+    public static void Batch(DesktopForm sh, JsonElement evs)
+    {
+        if (!Enabled || evs.ValueKind != JsonValueKind.Array) return;
+        if ((DateTime.Now - beat).TotalSeconds > 60) { try { sh.BeginInvoke(new Action(() => Pet.React("📱 Phone is controlling the PC", 4))); } catch { } }
+        beat = DateTime.Now; lastEvt = DateTime.Now;
+        int n = 0;
+        foreach (var e in evs.EnumerateArray()) { if (++n > 80) break; try { Apply(sh, e); } catch { } }
+    }
+    // never leave a mouse button stuck down if the phone disappears (works for both channels)
+    static readonly System.Threading.Timer watchdog = new(_ => { try { if (held && (DateTime.Now - lastEvt).TotalSeconds > 6) { Drag(false); held = false; } } catch { } }, null, 2000, 2000);
+
     public static async Task Loop(DesktopForm sh, string url, string code, CancellationToken ct)
     {
-        var lastBeat = DateTime.MinValue;
         while (!ct.IsCancellationRequested)
         {
             try
@@ -31,11 +43,7 @@ static class RemoteInput
                 var body = await resp.Content.ReadAsStringAsync(ct);
                 using var doc = JsonDocument.Parse(body);
                 if (!doc.RootElement.TryGetProperty("events", out var evs) || evs.ValueKind != JsonValueKind.Array) continue;
-                if (!Enabled) continue;
-                if ((DateTime.Now - lastBeat).TotalSeconds > 60) { try { sh.BeginInvoke(new Action(() => Pet.React("📱 Phone is controlling the PC", 4))); } catch { } }
-                lastBeat = DateTime.Now; lastEvt = DateTime.Now;
-                int n = 0;
-                foreach (var e in evs.EnumerateArray()) { if (++n > 80) break; try { Apply(sh, e); } catch { } }
+                Batch(sh, evs);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch { try { await Task.Delay(4000, ct); } catch { break; } }
